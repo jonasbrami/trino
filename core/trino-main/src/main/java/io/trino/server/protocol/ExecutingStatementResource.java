@@ -275,8 +275,7 @@ public class ExecutingStatementResource
             response.encoding("identity");
         }
 
-        queryDataEncoding
-                .ifPresent(encoding -> response.header(TRINO_HEADERS.responseQueryDataEncoding(), encoding));
+        queryDataEncoding.ifPresent(encoding -> response.header(TRINO_HEADERS.responseQueryDataEncoding(), encoding));
 
         return response.build();
     }
