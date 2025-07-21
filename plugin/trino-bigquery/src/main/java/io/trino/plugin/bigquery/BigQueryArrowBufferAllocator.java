@@ -15,10 +15,10 @@ package io.trino.plugin.bigquery;
 
 import com.google.inject.Inject;
 import io.airlift.log.Logger;
-import org.apache.arrow.memory.AllocationListener;
-import org.apache.arrow.memory.AllocationOutcome;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
+import io.trino.arrow.shaded.arrow.memory.AllocationListener;
+import io.trino.arrow.shaded.arrow.memory.AllocationOutcome;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.memory.RootAllocator;
 import org.weakref.jmx.Flatten;
 import org.weakref.jmx.Managed;
 

@@ -16,8 +16,8 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.ColumnarMap;
 import io.trino.spi.type.MapType;
-import org.apache.arrow.vector.complex.MapVector;
-import org.apache.arrow.vector.complex.StructVector;
+import io.trino.arrow.shaded.arrow.vector.complex.MapVector;
+import io.trino.arrow.shaded.arrow.vector.complex.StructVector;
 
 import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
 import static java.util.Objects.requireNonNull;

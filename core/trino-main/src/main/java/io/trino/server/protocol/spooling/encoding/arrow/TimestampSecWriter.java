@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.TimeStampSecVector;
+import io.trino.arrow.shaded.arrow.vector.TimeStampSecVector;
 
 import static io.trino.spi.type.TimestampType.TIMESTAMP_SECONDS;
 

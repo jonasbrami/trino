@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.FixedSizeBinaryVector;
+import io.trino.arrow.shaded.arrow.vector.FixedSizeBinaryVector;
 
 import static io.trino.spi.type.UuidType.UUID;
 

@@ -21,12 +21,12 @@ import io.trino.spi.Page;
 import io.trino.spi.PageBuilder;
 import io.trino.spi.connector.ConnectorPageSource;
 import io.trino.spi.connector.SourcePage;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.ipc.ReadChannel;
-import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
-import org.apache.arrow.vector.ipc.message.MessageSerializer;
-import org.apache.arrow.vector.types.pojo.Schema;
-import org.apache.arrow.vector.util.ByteArrayReadableSeekableByteChannel;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.vector.ipc.ReadChannel;
+import io.trino.arrow.shaded.arrow.vector.ipc.message.ArrowRecordBatch;
+import io.trino.arrow.shaded.arrow.vector.ipc.message.MessageSerializer;
+import io.trino.arrow.shaded.arrow.vector.types.pojo.Schema;
+import io.trino.arrow.shaded.arrow.vector.util.ByteArrayReadableSeekableByteChannel;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

@@ -14,15 +14,15 @@
 package io.trino.client.spooling.encoding;
 
 import com.google.common.collect.ImmutableList;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.memory.RootAllocator;
+import io.trino.arrow.shaded.arrow.vector.ipc.ArrowReader;
+import io.trino.arrow.shaded.arrow.vector.ipc.ArrowStreamReader;
 import io.trino.client.CloseableIterator;
 import io.trino.client.Column;
 import io.trino.client.QueryDataDecoder;
 import io.trino.client.spooling.DataAttributes;
 import io.trino.client.spooling.encoding.ArrowDecodingUtils.VectorTypeDecoder;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.ipc.ArrowReader;
-import org.apache.arrow.vector.ipc.ArrowStreamReader;
 
 import java.io.IOException;
 import java.io.InputStream;

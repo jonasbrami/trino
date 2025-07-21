@@ -16,7 +16,7 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 import io.trino.spi.block.Block;
 import io.trino.spi.type.DecimalType;
 import io.trino.spi.type.Int128;
-import org.apache.arrow.vector.DecimalVector;
+import io.trino.arrow.shaded.arrow.vector.DecimalVector;
 
 import static java.util.Objects.requireNonNull;
 

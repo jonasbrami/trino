@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.BitVector;
+import io.trino.arrow.shaded.arrow.vector.BitVector;
 
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 

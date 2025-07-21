@@ -37,23 +37,23 @@ import io.trino.spi.type.VarbinaryType;
 import io.trino.spi.type.VarcharType;
 import io.trino.type.IntervalDayTimeType;
 import io.trino.type.UnknownType;
-import org.apache.arrow.vector.types.pojo.ArrowType;
-import org.apache.arrow.vector.types.pojo.Field;
-import org.apache.arrow.vector.types.pojo.FieldType;
+import io.trino.arrow.shaded.arrow.vector.types.pojo.ArrowType;
+import io.trino.arrow.shaded.arrow.vector.types.pojo.Field;
+import io.trino.arrow.shaded.arrow.vector.types.pojo.FieldType;
 
 import java.util.List;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static org.apache.arrow.vector.types.DateUnit.DAY;
-import static org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE;
-import static org.apache.arrow.vector.types.FloatingPointPrecision.SINGLE;
-import static org.apache.arrow.vector.types.IntervalUnit.DAY_TIME;
-import static org.apache.arrow.vector.types.TimeUnit.MICROSECOND;
-import static org.apache.arrow.vector.types.TimeUnit.MILLISECOND;
-import static org.apache.arrow.vector.types.TimeUnit.NANOSECOND;
-import static org.apache.arrow.vector.types.TimeUnit.SECOND;
-import static org.apache.arrow.vector.types.pojo.FieldType.notNullable;
-import static org.apache.arrow.vector.types.pojo.FieldType.nullable;
+import static io.trino.arrow.shaded.arrow.vector.types.DateUnit.DAY;
+import static io.trino.arrow.shaded.arrow.vector.types.FloatingPointPrecision.DOUBLE;
+import static io.trino.arrow.shaded.arrow.vector.types.FloatingPointPrecision.SINGLE;
+import static io.trino.arrow.shaded.arrow.vector.types.IntervalUnit.DAY_TIME;
+import static io.trino.arrow.shaded.arrow.vector.types.TimeUnit.MICROSECOND;
+import static io.trino.arrow.shaded.arrow.vector.types.TimeUnit.MILLISECOND;
+import static io.trino.arrow.shaded.arrow.vector.types.TimeUnit.NANOSECOND;
+import static io.trino.arrow.shaded.arrow.vector.types.TimeUnit.SECOND;
+import static io.trino.arrow.shaded.arrow.vector.types.pojo.FieldType.notNullable;
+import static io.trino.arrow.shaded.arrow.vector.types.pojo.FieldType.nullable;
 
 public final class TrinoToArrowTypeConverter
 {

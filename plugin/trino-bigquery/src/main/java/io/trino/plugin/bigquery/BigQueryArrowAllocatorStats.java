@@ -14,8 +14,8 @@
 package io.trino.plugin.bigquery;
 
 import io.airlift.stats.CounterStat;
-import org.apache.arrow.memory.AllocationListener;
-import org.apache.arrow.memory.AllocationOutcome;
+import io.trino.arrow.shaded.arrow.memory.AllocationListener;
+import io.trino.arrow.shaded.arrow.memory.AllocationOutcome;
 import org.weakref.jmx.Managed;
 import org.weakref.jmx.Nested;
 

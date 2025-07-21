@@ -16,7 +16,7 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 import io.airlift.slice.Slice;
 import io.trino.spi.block.Block;
 import io.trino.spi.type.CharType;
-import org.apache.arrow.vector.VarCharVector;
+import io.trino.arrow.shaded.arrow.vector.VarCharVector;
 
 import static io.trino.spi.type.Chars.padSpaces;
 import static java.util.Objects.requireNonNull;

@@ -31,8 +31,8 @@ import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import io.trino.spi.predicate.TupleDomain;
 import jakarta.annotation.Nullable;
-import org.apache.arrow.vector.ipc.ReadChannel;
-import org.apache.arrow.vector.util.ByteArrayReadableSeekableByteChannel;
+import io.trino.arrow.shaded.arrow.vector.ipc.ReadChannel;
+import io.trino.arrow.shaded.arrow.vector.util.ByteArrayReadableSeekableByteChannel;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

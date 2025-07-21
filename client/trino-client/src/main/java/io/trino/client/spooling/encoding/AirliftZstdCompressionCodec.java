@@ -13,17 +13,17 @@
  */
 package io.trino.client.spooling.encoding;
 
-import org.apache.arrow.memory.ArrowBuf;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.compression.AbstractCompressionCodec;
-import org.apache.arrow.vector.compression.CompressionUtil;
+import io.trino.arrow.shaded.arrow.memory.ArrowBuf;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.vector.compression.AbstractCompressionCodec;
+import io.trino.arrow.shaded.arrow.vector.compression.CompressionUtil;
 
 import java.nio.ByteBuffer;
 
 import static io.trino.client.spooling.encoding.DecompressionUtils.decompressZstd;
 import static java.lang.Math.toIntExact;
-import static org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
-import static org.apache.arrow.vector.compression.CompressionUtil.SIZE_OF_UNCOMPRESSED_LENGTH;
+import static io.trino.arrow.shaded.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
+import static io.trino.arrow.shaded.arrow.vector.compression.CompressionUtil.SIZE_OF_UNCOMPRESSED_LENGTH;
 
 public class AirliftZstdCompressionCodec
         extends AbstractCompressionCodec

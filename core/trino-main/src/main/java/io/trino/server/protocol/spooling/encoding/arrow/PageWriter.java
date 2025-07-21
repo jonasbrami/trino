@@ -16,8 +16,8 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 import com.google.common.collect.ImmutableList;
 import io.trino.server.protocol.OutputColumn;
 import io.trino.spi.Page;
-import org.apache.arrow.vector.VectorSchemaRoot;
-import org.apache.arrow.vector.ipc.ArrowStreamWriter;
+import io.trino.arrow.shaded.arrow.vector.VectorSchemaRoot;
+import io.trino.arrow.shaded.arrow.vector.ipc.ArrowStreamWriter;
 
 import java.io.IOException;
 import java.util.List;

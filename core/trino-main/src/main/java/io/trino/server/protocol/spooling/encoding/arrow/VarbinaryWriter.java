@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.VarBinaryVector;
+import io.trino.arrow.shaded.arrow.vector.VarBinaryVector;
 
 import static io.trino.spi.type.VarbinaryType.VARBINARY;
 

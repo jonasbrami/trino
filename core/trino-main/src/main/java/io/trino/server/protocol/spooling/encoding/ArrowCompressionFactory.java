@@ -13,8 +13,8 @@
  */
 package io.trino.server.protocol.spooling.encoding;
 
-import org.apache.arrow.vector.compression.CompressionCodec;
-import org.apache.arrow.vector.compression.CompressionUtil;
+import io.trino.arrow.shaded.arrow.vector.compression.CompressionCodec;
+import io.trino.arrow.shaded.arrow.vector.compression.CompressionUtil;
 
 import static java.util.Objects.requireNonNull;
 

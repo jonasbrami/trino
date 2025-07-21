@@ -17,8 +17,8 @@ import io.trino.spi.block.Block;
 import io.trino.spi.block.RowBlock;
 import io.trino.spi.type.RowType;
 import io.trino.spi.type.Type;
-import org.apache.arrow.vector.FieldVector;
-import org.apache.arrow.vector.complex.StructVector;
+import io.trino.arrow.shaded.arrow.vector.FieldVector;
+import io.trino.arrow.shaded.arrow.vector.complex.StructVector;
 
 import java.util.List;
 

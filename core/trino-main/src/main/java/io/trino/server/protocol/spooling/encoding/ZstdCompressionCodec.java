@@ -14,15 +14,15 @@
 package io.trino.server.protocol.spooling.encoding;
 
 import io.airlift.compress.v3.zstd.ZstdCompressor;
-import org.apache.arrow.memory.ArrowBuf;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.compression.AbstractCompressionCodec;
-import org.apache.arrow.vector.compression.CompressionUtil;
+import io.trino.arrow.shaded.arrow.memory.ArrowBuf;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.vector.compression.AbstractCompressionCodec;
+import io.trino.arrow.shaded.arrow.vector.compression.CompressionUtil;
 
 import java.lang.foreign.MemorySegment;
 
 import static java.lang.Math.toIntExact;
-import static org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
+import static io.trino.arrow.shaded.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
 
 public class ZstdCompressionCodec
         extends AbstractCompressionCodec

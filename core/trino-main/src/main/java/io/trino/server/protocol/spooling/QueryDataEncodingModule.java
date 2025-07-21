@@ -20,9 +20,9 @@ import io.airlift.configuration.AbstractConfigurationAwareModule;
 import io.trino.server.protocol.spooling.encoding.ArrowCompressionFactory;
 import io.trino.server.protocol.spooling.encoding.ArrowQueryDataEncoder;
 import io.trino.server.protocol.spooling.encoding.JsonQueryDataEncoder;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.compression.CompressionCodec;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.memory.RootAllocator;
+import io.trino.arrow.shaded.arrow.vector.compression.CompressionCodec;
 
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 

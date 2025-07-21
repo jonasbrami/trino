@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.NullVector;
+import io.trino.arrow.shaded.arrow.vector.NullVector;
 
 public final class NullWriter
         extends PrimitiveWriter<NullVector>

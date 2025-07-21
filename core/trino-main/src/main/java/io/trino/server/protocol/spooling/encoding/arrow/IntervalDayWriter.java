@@ -15,7 +15,7 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
 import io.trino.type.IntervalDayTimeType;
-import org.apache.arrow.vector.IntervalDayVector;
+import io.trino.arrow.shaded.arrow.vector.IntervalDayVector;
 
 import static java.lang.Math.toIntExact;
 

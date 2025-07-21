@@ -13,22 +13,22 @@
  */
 package io.trino.client.spooling.encoding;
 
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.vector.BigIntVector;
+import io.trino.arrow.shaded.arrow.vector.DateDayVector;
+import io.trino.arrow.shaded.arrow.vector.DecimalVector;
+import io.trino.arrow.shaded.arrow.vector.FieldVector;
+import io.trino.arrow.shaded.arrow.vector.FixedSizeBinaryVector;
+import io.trino.arrow.shaded.arrow.vector.IntervalDayVector;
+import io.trino.arrow.shaded.arrow.vector.TimeStampVector;
+import io.trino.arrow.shaded.arrow.vector.ValueVector;
+import io.trino.arrow.shaded.arrow.vector.VarCharVector;
+import io.trino.arrow.shaded.arrow.vector.complex.ListVector;
+import io.trino.arrow.shaded.arrow.vector.complex.MapVector;
+import io.trino.arrow.shaded.arrow.vector.complex.StructVector;
+import io.trino.arrow.shaded.arrow.vector.util.TransferPair;
 import io.trino.client.ClientTypeSignature;
 import io.trino.client.Column;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.BigIntVector;
-import org.apache.arrow.vector.DateDayVector;
-import org.apache.arrow.vector.DecimalVector;
-import org.apache.arrow.vector.FieldVector;
-import org.apache.arrow.vector.FixedSizeBinaryVector;
-import org.apache.arrow.vector.IntervalDayVector;
-import org.apache.arrow.vector.TimeStampVector;
-import org.apache.arrow.vector.ValueVector;
-import org.apache.arrow.vector.VarCharVector;
-import org.apache.arrow.vector.complex.ListVector;
-import org.apache.arrow.vector.complex.MapVector;
-import org.apache.arrow.vector.complex.StructVector;
-import org.apache.arrow.vector.util.TransferPair;
 
 import java.io.Closeable;
 import java.io.IOException;

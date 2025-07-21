@@ -16,7 +16,7 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 import io.trino.spi.block.ArrayBlock;
 import io.trino.spi.block.Block;
 import io.trino.spi.type.ArrayType;
-import org.apache.arrow.vector.complex.ListVector;
+import io.trino.arrow.shaded.arrow.vector.complex.ListVector;
 
 import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
 import static java.util.Objects.requireNonNull;

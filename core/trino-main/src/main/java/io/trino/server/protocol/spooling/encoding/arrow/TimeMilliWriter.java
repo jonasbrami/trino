@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.TimeMilliVector;
+import io.trino.arrow.shaded.arrow.vector.TimeMilliVector;
 
 import static io.trino.spi.type.TimeType.TIME_MILLIS;
 import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_MILLISECOND;

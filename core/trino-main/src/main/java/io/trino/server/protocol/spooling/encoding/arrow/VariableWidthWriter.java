@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.VariableWidthVector;
+import io.trino.arrow.shaded.arrow.vector.VariableWidthVector;
 
 public abstract sealed class VariableWidthWriter<V extends VariableWidthVector>
         extends PrimitiveWriter<V> permits

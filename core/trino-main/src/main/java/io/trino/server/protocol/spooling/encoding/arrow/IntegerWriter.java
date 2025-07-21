@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.IntVector;
+import io.trino.arrow.shaded.arrow.vector.IntVector;
 
 import static io.trino.spi.type.IntegerType.INTEGER;
 

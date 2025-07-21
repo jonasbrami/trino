@@ -14,7 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
-import org.apache.arrow.vector.FixedWidthVector;
+import io.trino.arrow.shaded.arrow.vector.FixedWidthVector;
 
 public abstract sealed class FixedWidthWriter<V extends FixedWidthVector>
         extends PrimitiveWriter<V> permits
