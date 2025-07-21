@@ -76,9 +76,9 @@ import static java.lang.Math.floorMod;
 import static java.lang.Math.toIntExact;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
-import static org.apache.arrow.compression.CommonsCompressionFactory.INSTANCE;
-import static org.apache.arrow.vector.complex.BaseRepeatedValueVector.OFFSET_WIDTH;
-import static org.apache.arrow.vector.types.Types.MinorType.DECIMAL256;
+import static io.trino.arrow.shaded.arrow.compression.CommonsCompressionFactory.INSTANCE;
+import static io.trino.arrow.shaded.arrow.vector.complex.BaseRepeatedValueVector.OFFSET_WIDTH;
+import static io.trino.arrow.shaded.arrow.vector.types.Types.MinorType.DECIMAL256;
 
 public class BigQueryArrowToPageConverter
         implements AutoCloseable

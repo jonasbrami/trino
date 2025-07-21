@@ -14,6 +14,7 @@
 package io.trino.server.protocol.spooling.encoding;
 
 import com.google.inject.Inject;
+import io.airlift.log.Logger;
 import io.trino.Session;
 import io.trino.client.spooling.DataAttributes;
 import io.trino.server.protocol.OutputColumn;
@@ -45,6 +46,7 @@ import static java.util.Objects.requireNonNull;
 public class ArrowQueryDataEncoder
         implements QueryDataEncoder
 {
+    private static final Logger log = Logger.get(ArrowQueryDataEncoder.class);
     private static final String ENCODING = "arrow";
 
     private final List<Field> fields;
@@ -73,11 +75,27 @@ public class ArrowQueryDataEncoder
     public DataAttributes encodeTo(OutputStream output, List<Page> pages)
             throws IOException
     {
+        long totalRows = pages.stream().mapToLong(Page::getPositionCount).sum();
+        
+        log.info("🏹 ═══ ARROW ENCODING STARTED ═══");
+        log.info("🏹 PAGES: %d | ROWS: %d | COLUMNS: %d", pages.size(), totalRows, fields.size());
+        log.info("🏹 COMPRESSION: %s", codecType);
+        
+        long startTime = System.nanoTime();
         try (VectorSchemaRoot schema = VectorSchemaRoot.create(new Schema(fields), allocator)) {
             ArrowStreamWriter streamWriter = new ArrowStreamWriter(schema, null, Channels.newChannel(output), IpcOption.DEFAULT, compressionFactory, codecType);
             try (PageWriter arrowPageWriter = new PageWriter(streamWriter, schema, columns)) {
+                int bytesWritten = toIntExact(arrowPageWriter.writePages(pages));
+                long elapsedMs = (System.nanoTime() - startTime) / 1_000_000;
+                double throughputMBps = elapsedMs > 0 ? (bytesWritten / 1024.0 / 1024.0) / (elapsedMs / 1000.0) : 0.0;
+                
+                log.info("🏹 ✅ ARROW ENCODING COMPLETED ✅");
+                log.info("🏹 BYTES WRITTEN: %d | ELAPSED: %d ms | THROUGHPUT: %.2f MB/s", 
+                        bytesWritten, elapsedMs, throughputMBps);
+                log.info("🏹 This data is being written to the S3 PATH shown above ⬆️");
+                
                 return DataAttributes.builder()
-                        .set(SEGMENT_SIZE, toIntExact(arrowPageWriter.writePages(pages)))
+                        .set(SEGMENT_SIZE, bytesWritten)
                         .build();
             }
         }

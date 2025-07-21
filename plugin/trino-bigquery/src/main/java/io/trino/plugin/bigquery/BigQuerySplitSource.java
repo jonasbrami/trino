@@ -56,7 +56,7 @@ import static io.trino.plugin.bigquery.BigQueryUtil.buildNativeQuery;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
-import static org.apache.arrow.vector.ipc.message.MessageSerializer.deserializeSchema;
+import static io.trino.arrow.shaded.arrow.vector.ipc.message.MessageSerializer.deserializeSchema;
 
 public class BigQuerySplitSource
         implements ConnectorSplitSource

@@ -114,6 +114,10 @@
             <artifactId>google-cloud-bigquery</artifactId>
             <exclusions>
                 <exclusion>
+                    <groupId>com.google.flatbuffers</groupId>
+                    <artifactId>flatbuffers-java</artifactId>
+                </exclusion>
+                <exclusion>
                     <groupId>com.google.guava</groupId>
                     <artifactId>listenablefuture</artifactId>
                 </exclusion>
@@ -257,6 +261,11 @@
 
         <dependency>
             <groupId>io.trino</groupId>
+            <artifactId>trino-arrow-shaded</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.trino</groupId>
             <artifactId>trino-cache</artifactId>
         </dependency>
 
@@ -273,28 +282,6 @@
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.arrow</groupId>
-            <artifactId>arrow-compression</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.arrow</groupId>
-            <artifactId>arrow-memory-core</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.arrow</groupId>
-            <artifactId>arrow-vector</artifactId>
-            <exclusions>
-                <!-- conflicts with version from google-cloud-bigquery -->
-                <exclusion>
-                    <groupId>com.google.flatbuffers</groupId>
-                    <artifactId>flatbuffers-java</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
 
         <dependency>

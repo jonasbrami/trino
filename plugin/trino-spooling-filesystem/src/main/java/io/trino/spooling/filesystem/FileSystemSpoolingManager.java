@@ -15,6 +15,7 @@ package io.trino.spooling.filesystem;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
+import io.airlift.log.Logger;
 import io.airlift.slice.BasicSliceInput;
 import io.airlift.slice.Slice;
 import io.airlift.slice.SliceOutput;
@@ -58,6 +59,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class FileSystemSpoolingManager
         implements SpoolingManager
 {
+    private static final Logger log = Logger.get(FileSystemSpoolingManager.class);
     private final Location location;
     private final EncryptionHeadersTranslator encryptionHeadersTranslator;
     private final TrinoFileSystem fileSystem;
@@ -91,15 +93,26 @@ public class FileSystemSpoolingManager
         Location storageLocation = fileSystemLayout.location(location, fileHandle);
         Optional<EncryptionKey> encryption = fileHandle.encryptionKey();
 
+        log.info("📁 ═══ ARROW FILE CREATION STARTED ═══");
+        log.info("📁 S3 PATH: %s", storageLocation);
+        log.info("📁 ENCODING: %s | ENCRYPTED: %s | SEGMENT ID: %s", 
+                fileHandle.encoding(), encryptionEnabled, fileHandle.identifier());
+
         TrinoOutputFile outputFile;
         if (encryptionEnabled) {
             outputFile = fileSystem.newEncryptedOutputFile(storageLocation, encryption.orElseThrow());
+            log.info("📁 Using ENCRYPTED output file for S3 PATH: %s", storageLocation);
         }
         else {
             outputFile = fileSystem.newOutputFile(storageLocation);
+            log.info("📁 Using UNENCRYPTED output file for S3 PATH: %s", storageLocation);
         }
 
-        return outputFile.create();
+        OutputStream output = outputFile.create();
+        log.info("📁 ✅ ARROW FILE CREATED SUCCESSFULLY ✅");
+        log.info("📁 S3 PATH: %s", storageLocation);
+        
+        return output;
     }
 
     @Override

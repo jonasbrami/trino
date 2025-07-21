@@ -13,9 +13,9 @@
  */
 package io.trino.testing;
 
-import org.apache.arrow.memory.ArrowBuf;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.RootAllocator;
+import io.trino.arrow.shaded.arrow.memory.ArrowBuf;
+import io.trino.arrow.shaded.arrow.memory.BufferAllocator;
+import io.trino.arrow.shaded.arrow.memory.RootAllocator;
 
 public class ArrowAllocatorTest
 {

@@ -14,6 +14,7 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.trino.server.protocol.OutputColumn;
 import io.trino.spi.Page;
 import io.trino.arrow.shaded.arrow.vector.VectorSchemaRoot;
@@ -29,6 +30,7 @@ import static java.util.Objects.requireNonNull;
 public class PageWriter
         implements AutoCloseable
 {
+    private static final Logger log = Logger.get(PageWriter.class);
     private final VectorSchemaRoot schema;
     private final ArrowStreamWriter streamWriter;
     private final List<OutputColumn> columns;
@@ -43,8 +45,18 @@ public class PageWriter
     public int writePages(List<Page> pages)
             throws IOException
     {
+        log.debug("🏹 PageWriter: Starting to write %d pages", pages.size());
+        int pageIndex = 0;
+        long totalRows = 0;
+        
         for (Page page : pages) {
-            schema.setRowCount(page.getPositionCount());
+            pageIndex++;
+            int rowCount = page.getPositionCount();
+            totalRows += rowCount;
+            
+            log.debug("🏹 PageWriter: Writing page %d/%d with %d rows", pageIndex, pages.size(), rowCount);
+            
+            schema.setRowCount(rowCount);
             for (int i = 0; i < columns.size(); i++) {
                 schema.getVector(i).allocateNew();
                 writerForVector(schema.getVector(i), columns.get(i).type())
@@ -52,7 +64,12 @@ public class PageWriter
             }
             streamWriter.writeBatch();
         }
-        return toIntExact(streamWriter.bytesWritten());
+        
+        int totalBytes = toIntExact(streamWriter.bytesWritten());
+        log.debug("🏹 PageWriter: Completed writing %d pages, %d total rows, %d bytes", 
+                pages.size(), totalRows, totalBytes);
+        
+        return totalBytes;
     }
 
     @Override

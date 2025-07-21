@@ -15,6 +15,7 @@ package io.trino.operator;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import io.trino.client.spooling.DataAttributes;
@@ -145,6 +146,7 @@ public class OutputSpoolingOperatorFactory
     static class OutputSpoolingOperator
             implements Operator
     {
+        private static final Logger log = Logger.get(OutputSpoolingOperator.class);
         private static final long SPOOLING_THRESHOLD = DataSize.of(2, MEGABYTE).toBytes(); // this roughly translates to 400 KB compressed segment
 
         private final SpoolingController controller;
@@ -302,18 +304,36 @@ public class OutputSpoolingOperatorFactory
                         size));
 
                 OperationTimer overallTimer = new OperationTimer(false);
+                
+                log.info("🚀 ═══ SPOOLING OPERATION STARTED ═══");
+                log.info("🚀 SEGMENT ID: %s", segmentHandle.identifier());
+                log.info("🚀 ENCODING: %s", segmentHandle.encoding());
+                log.info("🚀 DATA: pages=%d, rows=%d, estimatedSize=%d bytes", partition.size(), rows, size);
+                log.info("🚀 Note: S3 PATH will be shown in FileSystemSpoolingManager logs below ⬇️");
+                
                 try (OutputStream output = spoolingManager.createOutputStream(segmentHandle)) {
                     spooledSegmentsCount.incrementAndGet();
+                    
+                    log.info("🚀 🏹 Encoding %d pages to Arrow format for segment: %s", partition.size(), segmentHandle.identifier());
                     DataAttributes attributes = queryDataEncoder.encodeTo(output, partition)
                             .toBuilder()
                             .set(ROWS_COUNT, rows)
                             .set(EXPIRES_AT, ZonedDateTime.ofInstant(segmentHandle.expirationTime(), clientZoneId).toLocalDateTime().toString())
                             .build();
-                    spooledEncodedBytes.addAndGet(attributes.get(SEGMENT_SIZE, Integer.class));
+                    
+                    int segmentSize = attributes.get(SEGMENT_SIZE, Integer.class);
+                    spooledEncodedBytes.addAndGet(segmentSize);
+                    
+                    log.info("🚀 ✅ SPOOLING OPERATION COMPLETED ✅");
+                    log.info("🚀 SEGMENT ID: %s", segmentHandle.identifier());
+                    log.info("🚀 FINAL SIZE: %d bytes | COMPRESSION RATIO: %.2f%% | ENCODING: %s", 
+                            segmentSize, size > 0 ? (100.0 * segmentSize / size) : 0.0, segmentHandle.encoding());
+                    
                     // This page is small (hundreds of bytes) so there is no point in tracking its memory usage
                     spooledMetadataBuilder.add(SpooledMetadataBlock.forSpooledLocation(spoolingManager.location(segmentHandle), attributes));
                 }
                 catch (IOException e) {
+                    log.error(e, "🚀 Spooling operation failed for segmentId=%s", segmentHandle.identifier());
                     throw new UncheckedIOException(e);
                 }
                 finally {
