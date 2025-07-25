@@ -26,6 +26,29 @@
   /></a>
 </p>
 
+## Arrow Spooling Support
+
+This fork includes Arrow spooling support built on top of the work from [PR #25015](https://github.com/trinodb/trino/pull/25015/) authored by [@dysn](https://github.com/dysn) and [@wendigo](https://github.com/trinodb/trino/commits?author=wendigo).
+
+### Configuration
+
+To enable Arrow spooling, you need to:
+
+1. **Add JVM options** to your Java environment:
+   ```
+   --enable-native-access=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED
+   ```
+
+2. **Add configuration properties** to your Trino configuration:
+   ```properties
+   protocol.spooling.encoding.arrow.enabled=true
+   protocol.spooling.encoding.arrow+zstd.enabled=true
+   ```
+
+### Python Client Support
+
+For asynchronous retrieval of Arrow spooled segments using PyArrow, see this fork of aiotrino: [jonasbrami/aiotrino](https://github.com/jonasbrami/aiotrino).
+
 ## Development
 
 Learn about development for all Trino organization projects:
