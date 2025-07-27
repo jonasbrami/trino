@@ -30,6 +30,7 @@ import io.trino.spi.type.RowType;
 import io.trino.spi.type.SmallintType;
 import io.trino.spi.type.TimeType;
 import io.trino.spi.type.TimestampType;
+import io.trino.spi.type.TimestampWithTimeZoneType;
 import io.trino.spi.type.TinyintType;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.UuidType;
@@ -106,6 +107,13 @@ public final class TrinoToArrowTypeConverter
                 case 6 -> new ArrowType.Timestamp(MICROSECOND, null);
                 case 9 -> new ArrowType.Timestamp(NANOSECOND, null);
                 default -> throw new UnsupportedOperationException("Unsupported timestamp precision: " + timestamp.getPrecision());
+            };
+            case TimestampWithTimeZoneType timestampWithTimeZone -> switch (timestampWithTimeZone.getPrecision()) {
+                case 0 -> new ArrowType.Timestamp(SECOND, "UTC");
+                case 3 -> new ArrowType.Timestamp(MILLISECOND, "UTC");
+                case 6 -> new ArrowType.Timestamp(MICROSECOND, "UTC");
+                case 9 -> new ArrowType.Timestamp(NANOSECOND, "UTC");
+                default -> throw new UnsupportedOperationException("Unsupported timestamp with time zone precision: " + timestampWithTimeZone.getPrecision());
             };
             case DecimalType decimal -> new ArrowType.Decimal(decimal.getPrecision(), decimal.getScale(), 128);
             case UuidType _ -> new ArrowType.FixedSizeBinary(16);
