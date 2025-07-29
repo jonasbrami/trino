@@ -34,7 +34,7 @@ This is for now not meant to be merged but only for the Trino dev community to b
 
 ### Motivation
 
-The primary motivation for implementing columnar storage (Arrow) vs traditional JSON spooling is addressing the tremendous serialization/deserialization costs that make Trino inconvenient to use with large query outputs.
+The primary motivation for implementing columnar storage (Arrow) vs traditional JSON encoding when using the Spooling protocol is addressing the tremendous serialization/deserialization costs that make currently Trino inconvenient to use with large query outputs.
 
 **Current Pain Points with JSON:**
 - Massive serialization/deserialization overhead for large result sets
