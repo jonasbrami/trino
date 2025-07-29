@@ -33,10 +33,44 @@ public class TestArrowSpooledDistributedQueries
     @Override
     public void testTimestampWithTimeZoneLiterals()
     {
-        // TODO: This ClassCastException is expected until we implement the Arrow query decoder 
-        // to properly handle timestamp with time zone values
+        // TODO: Arrow spooling by design converts all timestamps with time zone to UTC
+        // The original time zone information is not preserved in the Arrow format
         assertThatThrownBy(super::testTimestampWithTimeZoneLiterals)
-                .hasMessageContaining("class java.lang.Long cannot be cast to class java.lang.String");
+                .hasMessageContaining("expected: 1960-01-22T03:04:05+06:00")
+                .hasMessageContaining("but was: 1960-01-21T21:04:05Z");
+    }
+
+    @Test
+    @Override
+    public void testTimeWithTimeZoneLiterals()
+    {
+        // TODO: Arrow spooling by design converts all time with time zone to UTC
+        // The original time zone information is not preserved in the Arrow format
+        assertThatThrownBy(super::testTimeWithTimeZoneLiterals)
+                .hasMessageContaining("expected: 03:04:05+06:00")
+                .hasMessageContaining("but was: 21:04:05Z");
+    }
+
+    @Test
+    @Override
+    public void testIn()
+    {
+        // TODO: Arrow spooling by design converts all timestamps with time zone to UTC
+        // The original time zone information is not preserved in the Arrow format
+        assertThatThrownBy(super::testIn)
+                .hasMessageContaining("1970-01-01T08:01+08:00")
+                .hasMessageContaining("1970-01-01T00:01Z");
+    }
+
+    @Test
+    @Override
+    public void testAtTimeZone()
+    {
+        // TODO: Arrow spooling by design converts all timestamps with time zone to UTC
+        // The original time zone information is not preserved in the Arrow format
+        assertThatThrownBy(super::testAtTimeZone)
+                .hasMessageContaining("2012-10-30T18:09+07:09")
+                .hasMessageContaining("2012-10-30T11:00Z");
     }
 
     @Test
@@ -45,70 +79,6 @@ public class TestArrowSpooledDistributedQueries
     {
         assertThatThrownBy(super::testSelectLargeInterval)
                 .hasMessageContaining("Output columns [OutputColumn[sourcePageChannel=0, columnName=_col0, type=interval year to month]] are not supported for spooling encoding '%s'".formatted(encoding()));
-    }
-
-    @Test
-    @Override
-    public void testTimeLiterals()
-    {
-        assertThatThrownBy(super::testTimeLiterals)
-                .hasMessageContaining("class java.lang.Integer cannot be cast to class java.lang.String");
-    }
-
-    @Test
-    @Override
-    public void testTimestampLiterals()
-    {
-        assertThatThrownBy(super::testTimestampLiterals)
-                .hasMessageContaining("expected: 1960-01-22T03:04:05.123 (java.time.LocalDateTime)");
-    }
-
-    @Test
-    @Override
-    public void testIn()
-    {
-        // TODO: This ClassCastException is expected until we implement the Arrow query decoder 
-        // to properly handle timestamp with time zone values
-        assertThatThrownBy(super::testIn)
-                .hasMessageContaining("class java.lang.Long cannot be cast to class java.lang.String");
-    }
-
-    @Test
-    @Override
-    public void testTimeWithTimeZoneLiterals()
-    {
-        assertThatThrownBy(super::testTimeWithTimeZoneLiterals)
-                .hasMessageContaining("Output columns [OutputColumn[sourcePageChannel=0, columnName=_col0, type=time(3) with time zone]] are not supported for spooling encoding '%s'".formatted(encoding()));
-    }
-
-    @Test
-    @Override
-    public void testAtTimeZone()
-    {
-        // TODO: This ClassCastException is expected until we implement the Arrow query decoder 
-        // to properly handle timestamp with time zone values
-        assertThatThrownBy(super::testAtTimeZone)
-                .hasMessageContaining("class java.lang.Long cannot be cast to class java.lang.String");
-    }
-
-    @Test
-    @Override
-    public void testTransactionsTable()
-    {
-        // TODO: This ClassCastException is expected until we implement the Arrow query decoder 
-        // to properly handle timestamp with time zone values
-        assertThatThrownBy(super::testTransactionsTable)
-                .hasMessageContaining("class java.lang.Long cannot be cast to class java.lang.String");
-    }
-
-    @Test
-    @Override
-    public void testValuesWithTimestamp()
-    {
-        // TODO: This ClassCastException is expected until we implement the Arrow query decoder 
-        // to properly handle timestamp with time zone values
-        assertThatThrownBy(super::testValuesWithTimestamp)
-                .hasMessageContaining("class java.lang.Long cannot be cast to class java.lang.String");
     }
 
     @Override

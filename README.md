@@ -30,6 +30,26 @@
 
 This fork includes Arrow spooling support built on top of the work from [PR #25015](https://github.com/trinodb/trino/pull/25015/) authored by [@dysn](https://github.com/dysn) and [@wendigo](https://github.com/trinodb/trino/commits?author=wendigo).
 
+This is for now not meant to be merged but only for the Trino dev community to be reviewed and discussed.
+
+### Motivation
+
+The primary motivation for implementing columnar storage (Arrow) vs traditional JSON spooling is addressing the tremendous serialization/deserialization costs that make Trino inconvenient to use with large query outputs.
+
+**Current Pain Points with JSON:**
+- Massive serialization/deserialization overhead for large result sets
+- Forces users to implement ad hoc "unload" solutions
+- Common workaround: creating temporary Hive/Iceberg tables in Parquet format before final consumption
+- Users must manually manage temporary table creation and cleanup
+- Added operational complexity
+
+**Benefits of Arrow Spooling:**
+- Dramatically reduced serialization/deserialization costs through columnar format
+- Fast consumption of large query result through Trino's native Spooling Protocol 
+- Eliminates need for temporary table workarounds
+- Enables new use cases that were previously impractical due to performance constraints
+
+
 ### Configuration
 
 To enable Arrow spooling, you need to:
@@ -48,6 +68,49 @@ To enable Arrow spooling, you need to:
 ### Python Client Support
 
 For asynchronous retrieval of Arrow spooled segments using PyArrow, see this fork of aiotrino: [jonasbrami/aiotrino](https://github.com/jonasbrami/aiotrino).
+
+### Timestamp and Time Zone Handling
+
+#### Design Rationale
+
+Arrow spooling implementation makes specific design choices regarding timestamp and time zone handling:
+
+1. **Columnar Format Approach**: Most databases, data libraries, and data formats (including Arrow) do not support different time zones within the same column. Time zone information is typically defined per column as part of the schema.
+
+2. **Avoiding Data Peeking**: We want to avoid having to peek into the data to guess the timezone used in the column (assuming only 1 is used)
+
+3. **UTC Normalization Choice**: For simplicity and to avoid the complexity of examining data to determine timezone schemas, the Arrow spooling implementation automatically converts all `TIMESTAMP WITH TIME ZONE` and `TIME WITH TIME ZONE` values to UTC during serialization.
+
+#### Implementation Details
+
+- **TIMESTAMP WITH TIME ZONE**: All values are normalized to UTC timezone (`Z`) during Arrow encoding
+- **TIME WITH TIME ZONE**: All values are normalized to UTC offset (`Z`) during Arrow encoding  
+- **Precision Support**: All precision levels (second, millisecond, microsecond, nanosecond) are supported for both types
+- **Loss of Original Timezone**: The original timezone information is not preserved in the Arrow format
+
+#### Test Impact
+
+This design choice results in expected test failures in `TestArrowSpooledDistributedQueries.java` where assertions check for preservation of original timezone information:
+
+```java
+// Example: Expected assertion failure
+assertThatThrownBy(super::testTimestampWithTimeZoneLiterals)
+    .hasMessageContaining("expected: 1960-01-22T03:04:05+06:00")  // Original timezone
+    .hasMessageContaining("but was: 1960-01-21T21:04:05Z");       // UTC normalized
+```
+
+#### Alternative Approach
+
+An alternative implementation could serialize timezone-aware values as Arrow structs containing:
+- A naive timestamp component (without timezone)
+- A separate timezone attribute field
+
+This approach would preserve timezone information but would require additional complexity in both encoding and decoding logic. Most people may prefer performance and simplicity of the serialization/deserialization over 100% feature matching with the existing JSON serialization
+Both approaches could coexist based on user configuration. 
+
+#### Current Limitations
+
+- **Interval Year to Month**: Support for `INTERVAL YEAR TO MONTH` is not yet implemented, causing the `testSelectLargeInterval` test to fail with an unsupported column type error.
 
 ## Development
 

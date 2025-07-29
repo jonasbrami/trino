@@ -19,6 +19,7 @@ import io.trino.spi.type.DecimalType;
 import io.trino.spi.type.MapType;
 import io.trino.spi.type.RowType;
 import io.trino.spi.type.TimestampWithTimeZoneType;
+import io.trino.spi.type.TimeWithTimeZoneType;
 import io.trino.spi.type.Type;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
@@ -71,10 +72,18 @@ public final class VectorWriters
             case DecimalVector vector -> new DecimalWriter(vector, (DecimalType) type);
             case IntervalDayVector vector -> new IntervalDayWriter(vector);
             case FixedSizeBinaryVector vector -> new UuidWriter(vector);
-            case TimeSecVector vector -> new TimeSecWriter(vector);
-            case TimeMilliVector vector -> new TimeMilliWriter(vector);
-            case TimeMicroVector vector -> new TimeMicroWriter(vector);
-            case TimeNanoVector vector -> new TimeNanoWriter(vector);
+            case TimeSecVector vector -> type instanceof TimeWithTimeZoneType ? 
+                new TimeWithTimeZoneSecWriter(vector, (TimeWithTimeZoneType) type) : 
+                new TimeSecWriter(vector);
+            case TimeMilliVector vector -> type instanceof TimeWithTimeZoneType ? 
+                new TimeWithTimeZoneMilliWriter(vector, (TimeWithTimeZoneType) type) : 
+                new TimeMilliWriter(vector);
+            case TimeMicroVector vector -> type instanceof TimeWithTimeZoneType ? 
+                new TimeWithTimeZoneMicroWriter(vector, (TimeWithTimeZoneType) type) : 
+                new TimeMicroWriter(vector);
+            case TimeNanoVector vector -> type instanceof TimeWithTimeZoneType ? 
+                new TimeWithTimeZoneNanoWriter(vector, (TimeWithTimeZoneType) type) : 
+                new TimeNanoWriter(vector);
             case TimeStampSecVector vector -> new TimestampSecWriter(vector);
             case TimeStampMilliVector vector -> new TimestampMilliWriter(vector);
             case TimeStampMicroVector vector -> new TimestampMicroWriter(vector);
