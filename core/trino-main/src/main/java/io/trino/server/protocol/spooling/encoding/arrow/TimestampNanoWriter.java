@@ -14,9 +14,11 @@
 package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
+import io.trino.spi.type.LongTimestamp;
 import org.apache.arrow.vector.TimeStampNanoVector;
 
 import static io.trino.spi.type.TimestampType.TIMESTAMP_NANOS;
+import static java.lang.Math.multiplyExact;
 
 public final class TimestampNanoWriter
         extends FixedWidthWriter<TimeStampNanoVector>
@@ -35,6 +37,10 @@ public final class TimestampNanoWriter
     @Override
     protected void writeValue(Block block, int position)
     {
-        vector.set(position, TIMESTAMP_NANOS.getLong(block, position));
+        LongTimestamp timestamp = (LongTimestamp) TIMESTAMP_NANOS.getObject(block, position);
+        // Convert LongTimestamp to nanoseconds since epoch
+        long epochNanos = multiplyExact(timestamp.getEpochMicros(), 1000L) + 
+                         (timestamp.getPicosOfMicro() / 1000L);
+        vector.set(position, epochNanos);
     }
 }

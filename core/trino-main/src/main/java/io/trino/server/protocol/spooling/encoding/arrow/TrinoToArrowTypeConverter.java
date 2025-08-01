@@ -44,6 +44,7 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 
 import java.util.List;
+import java.util.Map;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static org.apache.arrow.vector.types.DateUnit.DAY;
@@ -78,7 +79,21 @@ public final class TrinoToArrowTypeConverter
                         .collect(toImmutableList());
                 yield new Field(name, nullable(ArrowType.Struct.INSTANCE), children);
             }
-            default -> new Field(name, nullableField(toArrowField(type), nullable), null);
+            case UuidType _ -> {
+                Map<String, String> metadata = Map.of(
+                        "ARROW:extension:name", "arrow.uuid",
+                        "ARROW:extension:metadata", "");
+                FieldType fieldType = new FieldType(nullable, new ArrowType.FixedSizeBinary(16), null, metadata);
+                yield new Field(name, fieldType, null);
+            }
+            default -> {
+                ArrowType arrowType = toArrowField(type);
+                FieldType fieldType;
+
+                fieldType = nullableField(arrowType, nullable);
+
+                yield new Field(name, fieldType, null);
+            }
         };
     }
 

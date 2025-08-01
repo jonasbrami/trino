@@ -49,14 +49,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.OffsetTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
-import java.time.temporal.ChronoField;
-import java.time.temporal.TemporalAccessor;
-import java.time.temporal.ValueRange;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -77,20 +73,20 @@ import static io.trino.client.ClientStandardTypes.MAP;
 import static io.trino.client.ClientStandardTypes.REAL;
 import static io.trino.client.ClientStandardTypes.SMALLINT;
 import static io.trino.client.ClientStandardTypes.TIME;
-import static io.trino.client.ClientStandardTypes.TIME_WITH_TIME_ZONE;
 import static io.trino.client.ClientStandardTypes.TIMESTAMP;
 import static io.trino.client.ClientStandardTypes.TIMESTAMP_WITH_TIME_ZONE;
+import static io.trino.client.ClientStandardTypes.TIME_WITH_TIME_ZONE;
 import static io.trino.client.ClientStandardTypes.TINYINT;
 import static io.trino.client.ClientStandardTypes.UUID;
 import static io.trino.client.ClientStandardTypes.VARCHAR;
 import static io.trino.client.IntervalDayTime.formatMillis;
+import static java.time.temporal.ChronoField.NANO_OF_SECOND;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Objects.requireNonNull;
 import static java.util.UUID.nameUUIDFromBytes;
-import static java.time.temporal.ChronoField.NANO_OF_SECOND;
 
 public class ArrowDecodingUtils
 {
@@ -383,10 +379,10 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-            
+
             LocalDateTime dateTime;
             int precision;
-            
+
             if (vector instanceof TimeStampSecVector) {
                 long seconds = ((TimeStampSecVector) vector).get(position);
                 dateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(seconds), ZoneOffset.UTC);
@@ -412,15 +408,15 @@ public class ArrowDecodingUtils
             else {
                 throw new UnsupportedOperationException("Unsupported timestamp vector type: " + vector.getClass());
             }
-            
+
             // Format with fixed precision (showing trailing zeros when needed)
             DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
                     .appendPattern("uuuu-MM-dd HH:mm:ss");
-                    
+
             if (precision > 0) {
                 builder.appendFraction(NANO_OF_SECOND, precision, precision, true);
             }
-            
+
             DateTimeFormatter formatter = builder.toFormatter();
             return formatter.format(dateTime);
         }
@@ -531,7 +527,7 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-            
+
             LocalTime time;
             if (vector instanceof TimeSecVector) {
                 int seconds = ((TimeSecVector) vector).get(position);
@@ -552,7 +548,7 @@ public class ArrowDecodingUtils
             else {
                 throw new UnsupportedOperationException("Unsupported time vector type: " + vector.getClass());
             }
-            
+
             // Format the time to match TestingTrinoClient expectations
             return DateTimeFormatter.ISO_LOCAL_TIME.format(time);
         }
@@ -580,7 +576,7 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-            
+
             LocalTime time;
             if (vector instanceof TimeSecVector) {
                 int seconds = ((TimeSecVector) vector).get(position);
@@ -601,7 +597,7 @@ public class ArrowDecodingUtils
             else {
                 throw new UnsupportedOperationException("Unsupported time with time zone vector type: " + vector.getClass());
             }
-            
+
             // Since the time zone was normalized to UTC during encoding,
             // we return the time with UTC offset
             return DateTimeFormatter.ISO_OFFSET_TIME.format(time.atOffset(ZoneOffset.UTC));
@@ -630,10 +626,10 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-            
+
             ZonedDateTime zonedDateTime;
             int precision;
-            
+
             if (vector instanceof TimeStampSecTZVector) {
                 long seconds = ((TimeStampSecTZVector) vector).get(position);
                 zonedDateTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(seconds), ZoneOffset.UTC);
@@ -659,18 +655,18 @@ public class ArrowDecodingUtils
             else {
                 throw new UnsupportedOperationException("Unsupported timestamp with time zone vector type: " + vector.getClass());
             }
-            
+
             // Format with fixed precision (showing trailing zeros when needed) and UTC zone
             DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
                     .appendPattern("uuuu-MM-dd HH:mm:ss");
-                    
+
             if (precision > 0) {
                 builder.appendFraction(NANO_OF_SECOND, precision, precision, true);
             }
-            
+
             builder.appendLiteral(' ').appendZoneId();
             DateTimeFormatter formatter = builder.toFormatter();
-            
+
             return formatter.format(zonedDateTime);
         }
 
