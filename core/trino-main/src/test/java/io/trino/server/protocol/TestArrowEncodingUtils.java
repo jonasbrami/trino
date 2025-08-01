@@ -49,8 +49,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.Arrays;
 
 import static io.airlift.slice.Slices.utf8Slice;
 import static io.trino.SessionTestUtils.TEST_SESSION;
@@ -81,6 +83,7 @@ import static io.trino.spi.type.TimeType.TIME_MICROS;
 import static io.trino.spi.type.TimeType.TIME_MILLIS;
 import static io.trino.spi.type.TimeType.TIME_NANOS;
 import static io.trino.spi.type.TimeType.TIME_SECONDS;
+import static io.trino.spi.type.TimeType.TIME_PICOS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MILLIS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_NANOS;
@@ -100,6 +103,8 @@ import static io.trino.spi.type.VarbinaryType.VARBINARY;
 import static io.trino.spi.type.VarcharType.VARCHAR;
 import static io.trino.spi.type.UuidType.UUID;
 import static io.trino.type.IntervalDayTimeType.INTERVAL_DAY_TIME;
+import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
+import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_SECOND;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -356,12 +361,43 @@ public class TestArrowEncodingUtils
     {
         List<TypedColumn> columns = ImmutableList.of(typed("col0", TIME_SECONDS));
         BlockBuilder blockBuilder = TIME_SECONDS.createBlockBuilder(null, 2);
-        TIME_SECONDS.writeLong(blockBuilder, 12345L); // picoseconds since midnight
-        TIME_SECONDS.writeLong(blockBuilder, 67890L);
-        Page page = page(blockBuilder.build());
 
+        // Test seconds precision values that result in meaningful times
+        // 14:30:25 = (14*3600 + 30*60 + 25) seconds = 52225 seconds = 52225000000000000 picoseconds
+        TIME_SECONDS.writeLong(blockBuilder, 52225000000000000L); // 14:30:25
+        // 09:15:45 = (9*3600 + 15*60 + 45) seconds = 33345 seconds = 33345000000000000 picoseconds  
+        TIME_SECONDS.writeLong(blockBuilder, 33345000000000000L); // 09:15:45
+
+        Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(2);
+        assertThat(result).containsExactly(
+                List.of("14:30:25"),
+                List.of("09:15:45"));
+    }
+
+    @Test
+    public void testTimePicosSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIME_PICOS));
+        BlockBuilder blockBuilder = TIME_PICOS.createBlockBuilder(null, 2);
+
+        // Test picosecond precision values that result in meaningful times
+        // 14:30:25.123456789 = (14*3600 + 30*60 + 25) seconds + 123456789 nanoseconds
+        // = 52225 seconds = 52225000000000000 picoseconds + 123456789000 picoseconds = 52225123456789000L
+        TIME_PICOS.writeLong(blockBuilder, 52225123456789000L); // 14:30:25.123456789 -> truncated to 14:30:25.123456789
+        // 09:15:45.987654321 = (9*3600 + 15*60 + 45) seconds + 987654321 nanoseconds  
+        // = 33345 seconds = 33345000000000000 picoseconds + 987654321000 picoseconds = 33345987654321000L
+        TIME_PICOS.writeLong(blockBuilder, 33345987654321000L); // 09:15:45.987654321 -> truncated to 09:15:45.987654321
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        
+        // Arrow supports nanosecond precision max, so picoseconds get truncated to nanoseconds
+        // The decoder returns strings for TIME types
+        assertThat(result).containsExactly(
+                List.of("14:30:25.123456789"), // 52225123456789000 picoseconds -> 52225123456789 nanoseconds -> 14:30:25.123456789
+                List.of("09:15:45.987654321")); // 33345987654321000 picoseconds -> 33345987654321 nanoseconds -> 09:15:45.987654321
     }
 
     @Test
@@ -638,6 +674,56 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testNestedArraySerialization()
+            throws IOException
+    {
+        // Test ARRAY<ARRAY<BIGINT>> - this should reproduce the "Lists have one child Field. Found: none" error
+        ArrayType innerArrayType = new ArrayType(BIGINT);
+        ArrayType outerArrayType = new ArrayType(innerArrayType);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", outerArrayType));
+        
+        ArrayBlockBuilder outerBuilder = outerArrayType.createBlockBuilder(null, 1);
+        
+        // Build nested array: [[1, 2, 3]]
+        outerBuilder.buildEntry(outerArray -> {
+            ArrayBlockBuilder innerBuilder = innerArrayType.createBlockBuilder(null, 1);
+            innerBuilder.buildEntry(innerArray -> {
+                BIGINT.writeLong(innerArray, 1L);
+                BIGINT.writeLong(innerArray, 2L);
+                BIGINT.writeLong(innerArray, 3L);
+            });
+            Block innerBlock = innerBuilder.build();
+            innerArrayType.writeObject(outerArray, innerArrayType.getObject(innerBlock, 0));
+        });
+
+        Page page = page(outerBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    public void testArrayOfUuidSerialization()
+            throws IOException
+    {
+        // Test ARRAY<UUID> - this should also test the UUID metadata issue we discussed
+        ArrayType arrayType = new ArrayType(UUID);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", arrayType));
+        ArrayBlockBuilder blockBuilder = arrayType.createBlockBuilder(null, 1);
+
+        blockBuilder.buildEntry(builder -> {
+            java.util.UUID uuid1 = java.util.UUID.randomUUID();
+            java.util.UUID uuid2 = java.util.UUID.randomUUID();
+            
+            UUID.writeSlice(builder, Slices.wrappedBuffer(uuidToBytes(uuid1)));
+            UUID.writeSlice(builder, Slices.wrappedBuffer(uuidToBytes(uuid2)));
+        });
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
     public void testMapSerialization()
             throws IOException
     {
@@ -684,6 +770,141 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testRowSerializationWithValues()
+            throws IOException
+    {
+        RowType rowType = RowType.rowType(
+                RowType.field("id", BIGINT),
+                RowType.field("name", VARCHAR),
+                RowType.field("active", BOOLEAN));
+
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", rowType));
+        RowBlockBuilder blockBuilder = rowType.createBlockBuilder(null, 3);
+
+        // First row: {id: 1001, name: "Alice", active: true}
+        blockBuilder.buildEntry(builders -> {
+            BIGINT.writeLong(builders.get(0), 1001L);
+            VARCHAR.writeSlice(builders.get(1), utf8Slice("Alice"));
+            BOOLEAN.writeBoolean(builders.get(2), true);
+        });
+
+        // Second row: {id: 2002, name: "Bob", active: false}
+        blockBuilder.buildEntry(builders -> {
+            BIGINT.writeLong(builders.get(0), 2002L);
+            VARCHAR.writeSlice(builders.get(1), utf8Slice("Bob"));
+            BOOLEAN.writeBoolean(builders.get(2), false);
+        });
+
+        // Third row: {id: null, name: "Charlie", active: null}
+        blockBuilder.buildEntry(builders -> {
+            builders.get(0).appendNull();
+            VARCHAR.writeSlice(builders.get(1), utf8Slice("Charlie"));
+            builders.get(2).appendNull();
+        });
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        
+        assertThat(result).containsExactly(
+                List.of(Arrays.asList(1001L, "Alice", true)),
+                List.of(Arrays.asList(2002L, "Bob", false)),
+                List.of(Arrays.asList(null, "Charlie", null)));
+    }
+
+    @Test
+    public void testRecursiveRowSerialization()
+            throws IOException
+    {
+        // Create ROW<address ROW<street VARCHAR, city VARCHAR>, age BIGINT>
+        RowType addressType = RowType.rowType(
+                RowType.field("street", VARCHAR),
+                RowType.field("city", VARCHAR));
+        
+        RowType personType = RowType.rowType(
+                RowType.field("address", addressType),
+                RowType.field("age", BIGINT));
+
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", personType));
+        RowBlockBuilder blockBuilder = personType.createBlockBuilder(null, 2);
+
+        // First row: {address: {street: "123 Main St", city: "Springfield"}, age: 30}
+        blockBuilder.buildEntry(personBuilders -> {
+            // Build the nested address row
+            RowBlockBuilder addressBuilder = addressType.createBlockBuilder(null, 1);
+            addressBuilder.buildEntry(addressBuilders -> {
+                VARCHAR.writeSlice(addressBuilders.get(0), utf8Slice("123 Main St"));
+                VARCHAR.writeSlice(addressBuilders.get(1), utf8Slice("Springfield"));
+            });
+            addressType.writeObject(personBuilders.get(0), addressType.getObject(addressBuilder.build(), 0));
+            BIGINT.writeLong(personBuilders.get(1), 30L);
+        });
+
+        // Second row: {address: {street: "456 Oak Ave", city: "Riverside"}, age: 25}
+        blockBuilder.buildEntry(personBuilders -> {
+            // Build the nested address row
+            RowBlockBuilder addressBuilder = addressType.createBlockBuilder(null, 1);
+            addressBuilder.buildEntry(addressBuilders -> {
+                VARCHAR.writeSlice(addressBuilders.get(0), utf8Slice("456 Oak Ave"));
+                VARCHAR.writeSlice(addressBuilders.get(1), utf8Slice("Riverside"));
+            });
+            addressType.writeObject(personBuilders.get(0), addressType.getObject(addressBuilder.build(), 0));
+            BIGINT.writeLong(personBuilders.get(1), 25L);
+        });
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        
+        assertThat(result).containsExactly(
+                List.of(Arrays.asList(Arrays.asList("123 Main St", "Springfield"), 30L)),
+                List.of(Arrays.asList(Arrays.asList("456 Oak Ave", "Riverside"), 25L)));
+    }
+
+    @Test
+    public void testDeeplyNestedRowSerialization()
+            throws IOException
+    {
+        // Create ROW<person ROW<name ROW<first VARCHAR, last VARCHAR>, age BIGINT>, active BOOLEAN>
+        RowType nameType = RowType.rowType(
+                RowType.field("first", VARCHAR),
+                RowType.field("last", VARCHAR));
+                
+        RowType personType = RowType.rowType(
+                RowType.field("name", nameType),
+                RowType.field("age", BIGINT));
+                
+        RowType recordType = RowType.rowType(
+                RowType.field("person", personType),
+                RowType.field("active", BOOLEAN));
+
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", recordType));
+        RowBlockBuilder blockBuilder = recordType.createBlockBuilder(null, 1);
+
+        // Build: {person: {name: {first: "John", last: "Doe"}, age: 35}, active: true}
+        blockBuilder.buildEntry(recordBuilders -> {
+            // Build the nested person row
+            RowBlockBuilder personBuilder = personType.createBlockBuilder(null, 1);
+            personBuilder.buildEntry(personBuilders -> {
+                // Build the nested name row
+                RowBlockBuilder nameBuilder = nameType.createBlockBuilder(null, 1);
+                nameBuilder.buildEntry(nameBuilders -> {
+                    VARCHAR.writeSlice(nameBuilders.get(0), utf8Slice("John"));
+                    VARCHAR.writeSlice(nameBuilders.get(1), utf8Slice("Doe"));
+                });
+                nameType.writeObject(personBuilders.get(0), nameType.getObject(nameBuilder.build(), 0));
+                BIGINT.writeLong(personBuilders.get(1), 35L);
+            });
+            personType.writeObject(recordBuilders.get(0), personType.getObject(personBuilder.build(), 0));
+            BOOLEAN.writeBoolean(recordBuilders.get(1), true);
+        });
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        
+        assertThat(result).containsExactly(
+                List.of(Arrays.asList(Arrays.asList(Arrays.asList("John", "Doe"), 35L), true)));
     }
 
     @Test

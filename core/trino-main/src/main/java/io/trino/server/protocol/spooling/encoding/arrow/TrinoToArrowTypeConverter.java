@@ -66,7 +66,7 @@ public final class TrinoToArrowTypeConverter
     {
         return switch (type) {
             case ArrayType t -> new Field(name, new FieldType(true, new ArrowType.List(), null), List.of(
-                    new Field("element", new FieldType(true, toArrowField(t.getElementType()), null), null)));
+                    toArrowField("element", t.getElementType(), true)));
             case MapType mapType -> {
                 Field entries = new Field("entries",
                         notNullable(ArrowType.Struct.INSTANCE),
@@ -115,6 +115,7 @@ public final class TrinoToArrowTypeConverter
                 case 3 -> new ArrowType.Time(MILLISECOND, 32);
                 case 6 -> new ArrowType.Time(MICROSECOND, 64);
                 case 9 -> new ArrowType.Time(NANOSECOND, 64);
+                case 12 -> new ArrowType.Time(NANOSECOND, 64); // Cast picoseconds to nanoseconds
                 default -> throw new UnsupportedOperationException("Unsupported time precision: " + time.getPrecision());
             };
             case TimeWithTimeZoneType timeWithTimeZone -> switch (timeWithTimeZone.getPrecision()) {
@@ -122,6 +123,7 @@ public final class TrinoToArrowTypeConverter
                 case 3 -> new ArrowType.Time(MILLISECOND, 32);
                 case 6 -> new ArrowType.Time(MICROSECOND, 64);
                 case 9 -> new ArrowType.Time(NANOSECOND, 64);
+                case 12 -> new ArrowType.Time(NANOSECOND, 64); // Cast picoseconds to nanoseconds
                 default -> throw new UnsupportedOperationException("Unsupported time with time zone precision: " + timeWithTimeZone.getPrecision());
             };
             case TimestampType timestamp -> switch (timestamp.getPrecision()) {
