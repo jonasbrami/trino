@@ -44,6 +44,7 @@ import org.apache.arrow.vector.util.TransferPair;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -69,6 +70,7 @@ import static io.trino.client.ClientStandardTypes.DECIMAL;
 import static io.trino.client.ClientStandardTypes.DOUBLE;
 import static io.trino.client.ClientStandardTypes.INTEGER;
 import static io.trino.client.ClientStandardTypes.INTERVAL_DAY_TO_SECOND;
+import static io.trino.client.ClientStandardTypes.JSON;
 import static io.trino.client.ClientStandardTypes.MAP;
 import static io.trino.client.ClientStandardTypes.REAL;
 import static io.trino.client.ClientStandardTypes.ROW;
@@ -155,9 +157,8 @@ public class ArrowDecodingUtils
                 return new TimestampWithTimeZoneDecoder(vector);
             case ROW:
                 return new RowDecoder(signature, checkedCast(vector, StructVector.class));
-//            case JSON:
-//            case TIME_WITH_TIME_ZONE:
-//            case TIMESTAMP_WITH_TIME_ZONE:
+            case JSON:
+                return new JsonDecoder(checkedCast(vector, VarCharVector.class));
 //            case INTERVAL_YEAR_TO_MONTH:
 //            case IPADDRESS:
 //            case GEOMETRY:
@@ -723,6 +724,33 @@ public class ArrowDecodingUtils
             for (VectorTypeDecoder fieldDecoder : fieldDecoders) {
                 fieldDecoder.close();
             }
+            vector.close();
+        }
+    }
+
+    private static class JsonDecoder
+            implements VectorTypeDecoder
+    {
+        private final VarCharVector vector;
+
+        public JsonDecoder(VarCharVector vector)
+        {
+            this.vector = requireNonNull(vector, "vector is null");
+        }
+
+        @Override
+        public Object decode(int position)
+        {
+            if (vector.isNull(position)) {
+                return null;
+            }
+            // Return the raw UTF-8 string instead of parsed JSON
+            return new String(vector.get(position), StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public void close()
+        {
             vector.close();
         }
     }

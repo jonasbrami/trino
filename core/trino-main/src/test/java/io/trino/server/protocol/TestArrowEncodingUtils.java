@@ -39,6 +39,7 @@ import io.trino.spi.type.TypeOperators;
 import io.trino.spi.type.UuidType;
 import io.trino.type.IntervalDayTimeType;
 import io.trino.type.UnknownType;
+import io.trino.type.JsonType;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.junit.jupiter.api.AfterEach;
@@ -78,7 +79,6 @@ import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.IntegerType.INTEGER;
 import static io.trino.spi.type.RealType.REAL;
 import static io.trino.spi.type.SmallintType.SMALLINT;
-import static io.trino.spi.type.StandardTypes.JSON;
 import static io.trino.spi.type.TimeType.TIME_MICROS;
 import static io.trino.spi.type.TimeType.TIME_MILLIS;
 import static io.trino.spi.type.TimeType.TIME_NANOS;
@@ -107,6 +107,8 @@ import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
 import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_SECOND;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
+import static io.trino.type.JsonType.JSON;
+import static io.trino.type.UnknownType.UNKNOWN;
 
 public class TestArrowEncodingUtils
 {
@@ -651,6 +653,27 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testJsonSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", JsonType.JSON));
+        BlockBuilder blockBuilder = JsonType.JSON.createBlockBuilder(null, 3);
+
+        // Test various JSON values
+        JsonType.JSON.writeSlice(blockBuilder, utf8Slice("{\"name\":\"Alice\",\"age\":30}"));
+        JsonType.JSON.writeSlice(blockBuilder, utf8Slice("[1,2,3,4,5]"));
+        JsonType.JSON.writeSlice(blockBuilder, utf8Slice("\"simple string\""));
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+        
+        assertThat(result).containsExactly(
+                List.of("{\"name\":\"Alice\",\"age\":30}"),
+                List.of("[1,2,3,4,5]"),
+                List.of("\"simple string\""));
+    }
+
+    @Test
     public void testArraySerialization()
             throws IOException
     {
@@ -925,8 +948,8 @@ public class TestArrowEncodingUtils
     public void testUnknownTypeSerialization()
             throws IOException
     {
-        List<TypedColumn> columns = ImmutableList.of(typed("col0", UnknownType.UNKNOWN));
-        BlockBuilder blockBuilder = UnknownType.UNKNOWN.createBlockBuilder(null, 3);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", UNKNOWN));
+        BlockBuilder blockBuilder = UNKNOWN.createBlockBuilder(null, 3);
         blockBuilder.appendNull();
         blockBuilder.appendNull();
         blockBuilder.appendNull();

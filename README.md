@@ -75,18 +75,17 @@ For asynchronous retrieval of Arrow spooled segments using PyArrow, see this for
 
 Arrow spooling implementation makes specific design choices regarding timestamp and time zone handling:
 
-1. **Columnar Format Approach**: Most databases, data libraries, and data formats (including Arrow) do not support different time zones within the same column. Time zone information is typically defined per column as part of the schema.
+1. **Stay as close to arrow as possible for serialization/deserialization speed*:
+   - For example Most databases, data libraries, and data formats (including Arrow) do not support different time zones within the same column. Time zone information is typically defined per column as part of the schema, the Arrow spooling implementation automatically converts all `TIMESTAMP WITH TIME ZONE` and `TIME WITH TIME ZONE` values to UTC during serialization. Avoiding Data Peeking**: We want to avoid having to peek into the data to guess the timezone used in the column (assuming only 1 is used)
+   - JSON is serialized as utf-8
 
-2. **Avoiding Data Peeking**: We want to avoid having to peek into the data to guess the timezone used in the column (assuming only 1 is used)
-
-3. **UTC Normalization Choice**: For simplicity and to avoid the complexity of examining data to determine timezone schemas, the Arrow spooling implementation automatically converts all `TIMESTAMP WITH TIME ZONE` and `TIME WITH TIME ZONE` values to UTC during serialization.
 
 #### Implementation Details
 
 - **TIMESTAMP WITH TIME ZONE**: All values are normalized to UTC timezone (`Z`) during Arrow encoding
 - **TIME WITH TIME ZONE**: All values are normalized to UTC offset (`Z`) during Arrow encoding  
 - **Precision Support**: All Arrow-supported precision levels (seconds, milliseconds, microseconds, nanoseconds) are implemented and tested for both types
-- **Picosecond Handling**: Trino's 12-decimal precision (picoseconds) is automatically cast to 9-decimal precision (nanoseconds) for Arrow compatibility. No exceptions are thrown; precision is gracefully reduced.
+- **Picosecond Handling**: Trino's 12-decimal precision (picoseconds) is automatically cast to 9-decimal precision (nanoseconds) for Arrow compatibility.
 - **Loss of Original Timezone**: The original timezone information is not preserved in the Arrow format
 
 ### Supported Data Types
@@ -106,6 +105,7 @@ The following Trino data types are currently supported and tested with Arrow spo
 - **VARCHAR** - Variable-length character strings
 - **CHAR** - Fixed-length character strings
 - **VARBINARY** - Variable-length binary data
+- **JSON** - JSON documents (stored as UTF-8 strings)
 
 #### Date and Time Types
 - **DATE** - Calendar dates

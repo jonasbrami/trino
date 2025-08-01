@@ -38,6 +38,7 @@ import io.trino.spi.type.UuidType;
 import io.trino.spi.type.VarbinaryType;
 import io.trino.spi.type.VarcharType;
 import io.trino.type.IntervalDayTimeType;
+import io.trino.type.JsonType;
 import io.trino.type.UnknownType;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -149,6 +150,7 @@ public final class TrinoToArrowTypeConverter
             case MapType _ -> new ArrowType.Map(false);
             case RowType _ -> new ArrowType.Struct();
             case IntervalDayTimeType _ -> new ArrowType.Interval(DAY_TIME);
+            case JsonType _ -> new ArrowType.Utf8();
             case UnknownType _ -> new ArrowType.Null();
             default -> throw new UnsupportedOperationException("Unsupported type: " + type);
         };
