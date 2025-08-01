@@ -129,6 +129,7 @@ public final class TrinoToArrowTypeConverter
                 case 3 -> new ArrowType.Timestamp(MILLISECOND, null);
                 case 6 -> new ArrowType.Timestamp(MICROSECOND, null);
                 case 9 -> new ArrowType.Timestamp(NANOSECOND, null);
+                case 12 -> new ArrowType.Timestamp(NANOSECOND, null); // Cast picoseconds to nanoseconds
                 default -> throw new UnsupportedOperationException("Unsupported timestamp precision: " + timestamp.getPrecision());
             };
             case TimestampWithTimeZoneType timestampWithTimeZone -> switch (timestampWithTimeZone.getPrecision()) {
@@ -136,6 +137,7 @@ public final class TrinoToArrowTypeConverter
                 case 3 -> new ArrowType.Timestamp(MILLISECOND, "UTC");
                 case 6 -> new ArrowType.Timestamp(MICROSECOND, "UTC");
                 case 9 -> new ArrowType.Timestamp(NANOSECOND, "UTC");
+                case 12 -> new ArrowType.Timestamp(NANOSECOND, "UTC"); // Cast picoseconds to nanoseconds
                 default -> throw new UnsupportedOperationException("Unsupported timestamp with time zone precision: " + timestampWithTimeZone.getPrecision());
             };
             case DecimalType decimal -> new ArrowType.Decimal(decimal.getPrecision(), decimal.getScale(), 128);

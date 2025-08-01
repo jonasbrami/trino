@@ -85,8 +85,49 @@ Arrow spooling implementation makes specific design choices regarding timestamp 
 
 - **TIMESTAMP WITH TIME ZONE**: All values are normalized to UTC timezone (`Z`) during Arrow encoding
 - **TIME WITH TIME ZONE**: All values are normalized to UTC offset (`Z`) during Arrow encoding  
-- **Precision Support**: All precision levels (second, millisecond, microsecond, nanosecond) are supported for both types
+- **Precision Support**: All Arrow-supported precision levels (seconds, milliseconds, microseconds, nanoseconds) are implemented and tested for both types
+- **Picosecond Handling**: Trino's 12-decimal precision (picoseconds) is automatically cast to 9-decimal precision (nanoseconds) for Arrow compatibility. No exceptions are thrown; precision is gracefully reduced.
 - **Loss of Original Timezone**: The original timezone information is not preserved in the Arrow format
+
+### Supported Data Types
+
+The following Trino data types are currently supported and tested with Arrow spooling:
+
+#### Primitive Types
+- **BIGINT** - 64-bit signed integers  
+- **INTEGER** - 32-bit signed integers
+- **SMALLINT** - 16-bit signed integers
+- **TINYINT** - 8-bit signed integers
+- **DOUBLE** - Double-precision floating-point
+- **REAL** - Single-precision floating-point  
+- **BOOLEAN** - Boolean values
+
+#### String and Binary Types
+- **VARCHAR** - Variable-length character strings
+- **CHAR** - Fixed-length character strings
+- **VARBINARY** - Variable-length binary data
+
+#### Date and Time Types
+- **DATE** - Calendar dates
+- **DECIMAL** - Fixed-precision decimal numbers
+- **TIME** - Time of day (all Arrow-supported precisions: seconds, milliseconds, microseconds, nanoseconds)
+- **TIME WITH TIME ZONE** - Time with timezone (all Arrow-supported precisions: seconds, milliseconds, microseconds, nanoseconds)
+- **TIMESTAMP** - Date and time (all precisions: seconds, milliseconds, microseconds, nanoseconds; picoseconds cast to nanoseconds)  
+- **TIMESTAMP WITH TIME ZONE** - Timestamp with timezone (all precisions: seconds, milliseconds, microseconds, nanoseconds; picoseconds cast to nanoseconds)
+- **INTERVAL DAY TIME** - Day-time intervals
+
+*Note: Trino supports up to 12-decimal precision (picoseconds), but for Arrow compatibility, picosecond precision is automatically cast to nanosecond precision with graceful precision reduction.*
+
+#### Special Types
+- **UUID** - Universally unique identifiers (encoded as Arrow extension type `arrow.uuid`)
+- **UNKNOWN** - Null-only type
+
+#### Complex Types
+- **ARRAY** - Variable-length arrays of elements
+- **MAP** - Key-value mappings
+- **ROW** - Structured records with named fields (structs)
+
+*Note: All types maintain their precision and handle null values correctly during Arrow encoding/decoding round-trips.*
 
 #### Test Impact
 

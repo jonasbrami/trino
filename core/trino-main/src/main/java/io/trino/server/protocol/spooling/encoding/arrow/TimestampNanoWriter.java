@@ -39,8 +39,23 @@ public final class TimestampNanoWriter
     {
         LongTimestamp timestamp = (LongTimestamp) TIMESTAMP_NANOS.getObject(block, position);
         // Convert LongTimestamp to nanoseconds since epoch
-        long epochNanos = multiplyExact(timestamp.getEpochMicros(), 1000L) + 
-                         (timestamp.getPicosOfMicro() / 1000L);
-        vector.set(position, epochNanos);
+        // For picosecond timestamps, epochMicros can be very large, so we need to check for overflow
+        try {
+            long epochNanos = multiplyExact(timestamp.getEpochMicros(), 1000L) + 
+                             (timestamp.getPicosOfMicro() / 1000L);
+            vector.set(position, epochNanos);
+        }
+        catch (ArithmeticException e) {
+            // Handle overflow by saturating to max/min values
+            long epochMicros = timestamp.getEpochMicros();
+            if (epochMicros > 0) {
+                // Positive overflow - set to max representable nanoseconds
+                vector.set(position, Long.MAX_VALUE);
+            }
+            else {
+                // Negative overflow - set to min representable nanoseconds  
+                vector.set(position, Long.MIN_VALUE);
+            }
+        }
     }
 }

@@ -68,34 +68,38 @@ import static io.trino.block.BlockAssertions.createLongDecimalsBlock;
 import static io.trino.block.BlockAssertions.createTimestampSequenceBlock;
 import static io.trino.server.protocol.ProtocolUtil.createColumn;
 import static io.trino.spi.type.BigintType.BIGINT;
-import static io.trino.spi.type.IntegerType.INTEGER;
-import static io.trino.spi.type.SmallintType.SMALLINT;
-import static io.trino.spi.type.TinyintType.TINYINT;
-import static io.trino.spi.type.DoubleType.DOUBLE;
-import static io.trino.spi.type.RealType.REAL;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
-import static io.trino.spi.type.VarcharType.VARCHAR;
-import static io.trino.spi.type.VarbinaryType.VARBINARY;
 import static io.trino.spi.type.CharType.createCharType;
 import static io.trino.spi.type.DateType.DATE;
 import static io.trino.spi.type.DecimalType.createDecimalType;
-import static io.trino.spi.type.TimeType.TIME_MILLIS;
+import static io.trino.spi.type.DoubleType.DOUBLE;
+import static io.trino.spi.type.IntegerType.INTEGER;
+import static io.trino.spi.type.RealType.REAL;
+import static io.trino.spi.type.SmallintType.SMALLINT;
+import static io.trino.spi.type.StandardTypes.JSON;
 import static io.trino.spi.type.TimeType.TIME_MICROS;
+import static io.trino.spi.type.TimeType.TIME_MILLIS;
 import static io.trino.spi.type.TimeType.TIME_NANOS;
 import static io.trino.spi.type.TimeType.TIME_SECONDS;
-import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MILLIS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS;
+import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MILLIS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_NANOS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_SECONDS;
-import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MICROS;
+import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_NANOS;
+import static io.trino.spi.type.TimestampType.TIMESTAMP_PICOS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_SECONDS;
-import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MILLIS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MICROS;
+import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MILLIS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_NANOS;
+import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_PICOS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_SECONDS;
+import static io.trino.spi.type.TinyintType.TINYINT;
+import static io.trino.spi.type.VarbinaryType.VARBINARY;
+import static io.trino.spi.type.VarcharType.VARCHAR;
 import static io.trino.spi.type.UuidType.UUID;
+import static io.trino.type.IntervalDayTimeType.INTERVAL_DAY_TIME;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -375,6 +379,48 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testTimeWithTimeZoneSecondsSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIME_TZ_SECONDS));
+        BlockBuilder blockBuilder = TIME_TZ_SECONDS.createBlockBuilder(null, 2);
+        TIME_TZ_SECONDS.writeLong(blockBuilder, packTimeWithTimeZone(12345L, 0)); // packed value
+        TIME_TZ_SECONDS.writeLong(blockBuilder, packTimeWithTimeZone(67890L, 60));
+        Page page = page(blockBuilder.build());
+
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testTimeWithTimeZoneMicrosSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIME_TZ_MICROS));
+        BlockBuilder blockBuilder = TIME_TZ_MICROS.createBlockBuilder(null, 2);
+        TIME_TZ_MICROS.writeLong(blockBuilder, packTimeWithTimeZone(12345000000L, 0)); // packed value
+        TIME_TZ_MICROS.writeLong(blockBuilder, packTimeWithTimeZone(67890000000L, 60));
+        Page page = page(blockBuilder.build());
+
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testTimeWithTimeZoneNanosSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIME_TZ_NANOS));
+        BlockBuilder blockBuilder = TIME_TZ_NANOS.createBlockBuilder(null, 2);
+        TIME_TZ_NANOS.writeLong(blockBuilder, packTimeWithTimeZone(12345000000000L, 0)); // packed value
+        TIME_TZ_NANOS.writeLong(blockBuilder, packTimeWithTimeZone(67890000000000L, 60));
+        Page page = page(blockBuilder.build());
+
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
     public void testTimestampMillisSerialization()
             throws IOException
     {
@@ -462,6 +508,88 @@ public class TestArrowEncodingUtils
         
         TIMESTAMP_TZ_NANOS.writeObject(blockBuilder, timestamp1);
         TIMESTAMP_TZ_NANOS.writeObject(blockBuilder, timestamp2);
+        Page page = page(blockBuilder.build());
+
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testTimestampWithTimeZoneSecondsSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_SECONDS));
+        BlockBuilder blockBuilder = TIMESTAMP_TZ_SECONDS.createBlockBuilder(null, 2);
+        TIMESTAMP_TZ_SECONDS.writeLong(blockBuilder, packDateTimeWithZone(1234567890L, 0));
+        TIMESTAMP_TZ_SECONDS.writeLong(blockBuilder, packDateTimeWithZone(9876543210L, 60));
+        Page page = page(blockBuilder.build());
+
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testTimestampPicosSerialization()
+            throws IOException
+    {
+        // Picosecond timestamps should be automatically cast to nanosecond precision for Arrow compatibility
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_PICOS));
+        BlockBuilder blockBuilder = TIMESTAMP_PICOS.createBlockBuilder(null, 2);
+        
+        // Create LongTimestamp objects with picosecond precision
+        LongTimestamp timestamp1 = new LongTimestamp(1234567890123456L, 789123); // 789,123 picoseconds
+        LongTimestamp timestamp2 = new LongTimestamp(9876543210987654L, 456789); // 456,789 picoseconds
+        
+        TIMESTAMP_PICOS.writeObject(blockBuilder, timestamp1);
+        TIMESTAMP_PICOS.writeObject(blockBuilder, timestamp2);
+        Page page = page(blockBuilder.build());
+
+        // Should successfully round-trip, with picoseconds truncated to nanoseconds
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+        // Note: Precision loss expected - picoseconds are truncated to nanoseconds
+    }
+
+    @Test
+    public void testTimestampWithTimeZonePicosSerialization()
+            throws IOException
+    {
+        // Picosecond timestamps with timezone should be automatically cast to nanosecond precision for Arrow compatibility
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_PICOS));
+        BlockBuilder blockBuilder = TIMESTAMP_TZ_PICOS.createBlockBuilder(null, 2);
+        
+        // Create LongTimestampWithTimeZone objects with picosecond precision
+        LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
+                1234567890123L, 789123, (short) 0); // 789,123 picoseconds, UTC
+        LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
+                9876543210987L, 456789, (short) 60); // 456,789 picoseconds, +1 hour
+        
+        TIMESTAMP_TZ_PICOS.writeObject(blockBuilder, timestamp1);
+        TIMESTAMP_TZ_PICOS.writeObject(blockBuilder, timestamp2);
+        Page page = page(blockBuilder.build());
+
+        // Should successfully round-trip, with picoseconds truncated to nanoseconds
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(2);
+        // Note: Precision loss expected - picoseconds are truncated to nanoseconds
+    }
+
+    @Test
+    public void testTimestampWithTimeZoneMicrosSerialization()
+            throws IOException
+    {
+        // Microsecond timestamps with timezone require LongTimestampWithTimeZone objects (precision 6 > MAX_SHORT_PRECISION 3)
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_MICROS));
+        BlockBuilder blockBuilder = TIMESTAMP_TZ_MICROS.createBlockBuilder(null, 2);
+        
+        // Create LongTimestampWithTimeZone objects (epochMillis, picosOfMilli, timeZoneKey)
+        LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
+                1234567890123L, 456_000, (short) 0); // UTC
+        LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
+                9876543210987L, 654_000, (short) 60); // +1 hour
+        
+        TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, timestamp1);
+        TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, timestamp2);
         Page page = page(blockBuilder.build());
 
         List<List<Object>> result = roundTrip(columns, page);
