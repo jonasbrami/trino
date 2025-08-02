@@ -38,6 +38,7 @@ import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeOperators;
 import io.trino.spi.type.UuidType;
 import io.trino.type.IntervalDayTimeType;
+import io.trino.type.IntervalYearMonthType;
 import io.trino.type.UnknownType;
 import io.trino.type.JsonType;
 import org.apache.arrow.memory.BufferAllocator;
@@ -109,6 +110,7 @@ import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import static io.trino.type.JsonType.JSON;
 import static io.trino.type.UnknownType.UNKNOWN;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class TestArrowEncodingUtils
 {
@@ -985,6 +987,25 @@ public class TestArrowEncodingUtils
 
         assertThat(result).containsExactly(
                 List.of(Arrays.asList(Arrays.asList(Arrays.asList("John", "Doe"), 35L), true)));
+    }
+
+    @Test
+    public void testIntervalYearMonthSerialization()
+            throws IOException
+    {
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", IntervalYearMonthType.INTERVAL_YEAR_MONTH));
+        BlockBuilder blockBuilder = IntervalYearMonthType.INTERVAL_YEAR_MONTH.createBlockBuilder(null, 3);
+        IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, 15); // 15 months = 1 year 3 months
+        IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, 25); // 25 months = 2 years 1 month
+        IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, -7); // -7 months
+        Page page = page(blockBuilder.build());
+
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(3);
+        // IntervalYearMonth values are returned as period strings by Arrow decoder
+        assertThat(result.get(0).get(0).toString()).isEqualTo("P15M");  // ISO-8601: 15 months
+        assertThat(result.get(1).get(0).toString()).isEqualTo("P25M");  // ISO-8601: 25 months
+        assertThat(result.get(2).get(0).toString()).isEqualTo("P-7M");  // ISO-8601: -7 months
     }
 
     @Test
