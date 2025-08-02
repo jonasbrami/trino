@@ -367,7 +367,7 @@ public class TestArrowEncodingUtils
         // Test seconds precision values that result in meaningful times
         // 14:30:25 = (14*3600 + 30*60 + 25) seconds = 52225 seconds = 52225000000000000 picoseconds
         TIME_SECONDS.writeLong(blockBuilder, 52225000000000000L); // 14:30:25
-        // 09:15:45 = (9*3600 + 15*60 + 45) seconds = 33345 seconds = 33345000000000000 picoseconds  
+        // 09:15:45 = (9*3600 + 15*60 + 45) seconds = 33345 seconds = 33345000000000000 picoseconds
         TIME_SECONDS.writeLong(blockBuilder, 33345000000000000L); // 09:15:45
 
         Page page = page(blockBuilder.build());
@@ -388,13 +388,13 @@ public class TestArrowEncodingUtils
         // 14:30:25.123456789 = (14*3600 + 30*60 + 25) seconds + 123456789 nanoseconds
         // = 52225 seconds = 52225000000000000 picoseconds + 123456789000 picoseconds = 52225123456789000L
         TIME_PICOS.writeLong(blockBuilder, 52225123456789000L); // 14:30:25.123456789 -> truncated to 14:30:25.123456789
-        // 09:15:45.987654321 = (9*3600 + 15*60 + 45) seconds + 987654321 nanoseconds  
+        // 09:15:45.987654321 = (9*3600 + 15*60 + 45) seconds + 987654321 nanoseconds
         // = 33345 seconds = 33345000000000000 picoseconds + 987654321000 picoseconds = 33345987654321000L
         TIME_PICOS.writeLong(blockBuilder, 33345987654321000L); // 09:15:45.987654321 -> truncated to 09:15:45.987654321
 
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        
+
         // Arrow supports nanosecond precision max, so picoseconds get truncated to nanoseconds
         // The decoder returns strings for TIME types
         assertThat(result).containsExactly(
@@ -534,16 +534,16 @@ public class TestArrowEncodingUtils
         // Nanosecond timestamps with timezone require LongTimestampWithTimeZone objects
         List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_NANOS));
         BlockBuilder blockBuilder = TIMESTAMP_TZ_NANOS.createBlockBuilder(null, 2);
-        
+
         // Create LongTimestampWithTimeZone objects (epochMillis, picosOfMilli, timeZoneKey)
         // UTC timezone (key = 0)
         LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
                 1234567890123L, 456_000, (short) 0); // 456,000 picoseconds = 456 nanoseconds within the millisecond, UTC
-        
-        // +1 hour timezone (key = 60 minutes offset)  
+
+        // +1 hour timezone (key = 60 minutes offset)
         LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
                 9876543210987L, 789_000, (short) 60); // 789,000 picoseconds = 789 nanoseconds within the millisecond, +1 hour
-        
+
         TIMESTAMP_TZ_NANOS.writeObject(blockBuilder, timestamp1);
         TIMESTAMP_TZ_NANOS.writeObject(blockBuilder, timestamp2);
         Page page = page(blockBuilder.build());
@@ -573,11 +573,11 @@ public class TestArrowEncodingUtils
         // Picosecond timestamps should be automatically cast to nanosecond precision for Arrow compatibility
         List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_PICOS));
         BlockBuilder blockBuilder = TIMESTAMP_PICOS.createBlockBuilder(null, 2);
-        
+
         // Create LongTimestamp objects with picosecond precision
         LongTimestamp timestamp1 = new LongTimestamp(1234567890123456L, 789123); // 789,123 picoseconds
         LongTimestamp timestamp2 = new LongTimestamp(9876543210987654L, 456789); // 456,789 picoseconds
-        
+
         TIMESTAMP_PICOS.writeObject(blockBuilder, timestamp1);
         TIMESTAMP_PICOS.writeObject(blockBuilder, timestamp2);
         Page page = page(blockBuilder.build());
@@ -595,13 +595,13 @@ public class TestArrowEncodingUtils
         // Picosecond timestamps with timezone should be automatically cast to nanosecond precision for Arrow compatibility
         List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_PICOS));
         BlockBuilder blockBuilder = TIMESTAMP_TZ_PICOS.createBlockBuilder(null, 2);
-        
+
         // Create LongTimestampWithTimeZone objects with picosecond precision
         LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
                 1234567890123L, 789123, (short) 0); // 789,123 picoseconds, UTC
         LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
                 9876543210987L, 456789, (short) 60); // 456,789 picoseconds, +1 hour
-        
+
         TIMESTAMP_TZ_PICOS.writeObject(blockBuilder, timestamp1);
         TIMESTAMP_TZ_PICOS.writeObject(blockBuilder, timestamp2);
         Page page = page(blockBuilder.build());
@@ -619,13 +619,13 @@ public class TestArrowEncodingUtils
         // Microsecond timestamps with timezone require LongTimestampWithTimeZone objects (precision 6 > MAX_SHORT_PRECISION 3)
         List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_MICROS));
         BlockBuilder blockBuilder = TIMESTAMP_TZ_MICROS.createBlockBuilder(null, 2);
-        
+
         // Create LongTimestampWithTimeZone objects (epochMillis, picosOfMilli, timeZoneKey)
         LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
                 1234567890123L, 456_000, (short) 0); // UTC
         LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
                 9876543210987L, 654_000, (short) 60); // +1 hour
-        
+
         TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, timestamp1);
         TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, timestamp2);
         Page page = page(blockBuilder.build());
@@ -640,10 +640,10 @@ public class TestArrowEncodingUtils
     {
         List<TypedColumn> columns = ImmutableList.of(typed("col0", UUID));
         BlockBuilder blockBuilder = UUID.createBlockBuilder(null, 2);
-        
+
         UUID uuid1 = java.util.UUID.randomUUID();
         UUID uuid2 = java.util.UUID.randomUUID();
-        
+
         UUID.writeSlice(blockBuilder, Slices.wrappedBuffer(uuidToBytes(uuid1)));
         UUID.writeSlice(blockBuilder, Slices.wrappedBuffer(uuidToBytes(uuid2)));
         Page page = page(blockBuilder.build());
@@ -666,11 +666,68 @@ public class TestArrowEncodingUtils
 
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        
+
         assertThat(result).containsExactly(
                 List.of("{\"name\":\"Alice\",\"age\":30}"),
                 List.of("[1,2,3,4,5]"),
                 List.of("\"simple string\""));
+    }
+
+    @Test
+    public void testSimpleRowFromSQL()
+            throws IOException
+    {
+        // Test "SELECT ROW(1, 'one')"
+        RowType rowType = RowType.rowType(
+                RowType.field("field0", BIGINT),
+                RowType.field("field1", VARCHAR));
+
+        List<TypedColumn> columns = ImmutableList.of(typed("_col0", rowType));
+        RowBlockBuilder blockBuilder = rowType.createBlockBuilder(null, 1);
+
+        // Build ROW(1, 'one')
+        blockBuilder.buildEntry(builders -> {
+            BIGINT.writeLong(builders.get(0), 1L);
+            VARCHAR.writeSlice(builders.get(1), utf8Slice("one"));
+        });
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+
+        assertThat(result).containsExactly(
+                List.of(Arrays.asList(1L, "one")));
+    }
+
+    @Test
+    public void testAnonymousRowSerialization()
+            throws IOException
+    {
+        // Test anonymous ROW type - like SELECT ROW(42, 'hello', true)
+        RowType rowType = RowType.anonymous(ImmutableList.of(BIGINT, VARCHAR, BOOLEAN));
+
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", rowType));
+        RowBlockBuilder blockBuilder = rowType.createBlockBuilder(null, 2);
+
+        // First row: ROW(42, 'hello', true)
+        blockBuilder.buildEntry(builders -> {
+            BIGINT.writeLong(builders.get(0), 42L);
+            VARCHAR.writeSlice(builders.get(1), utf8Slice("hello"));
+            BOOLEAN.writeBoolean(builders.get(2), true);
+        });
+
+        // Second row: ROW(123, 'world', false)
+        blockBuilder.buildEntry(builders -> {
+            BIGINT.writeLong(builders.get(0), 123L);
+            VARCHAR.writeSlice(builders.get(1), utf8Slice("world"));
+            BOOLEAN.writeBoolean(builders.get(2), false);
+        });
+
+        Page page = page(blockBuilder.build());
+        List<List<Object>> result = roundTrip(columns, page);
+
+        assertThat(result).containsExactly(
+                List.of(Arrays.asList(42L, "hello", true)),
+                List.of(Arrays.asList(123L, "world", false)));
     }
 
     @Test
@@ -704,9 +761,9 @@ public class TestArrowEncodingUtils
         ArrayType innerArrayType = new ArrayType(BIGINT);
         ArrayType outerArrayType = new ArrayType(innerArrayType);
         List<TypedColumn> columns = ImmutableList.of(typed("col0", outerArrayType));
-        
+
         ArrayBlockBuilder outerBuilder = outerArrayType.createBlockBuilder(null, 1);
-        
+
         // Build nested array: [[1, 2, 3]]
         outerBuilder.buildEntry(outerArray -> {
             ArrayBlockBuilder innerBuilder = innerArrayType.createBlockBuilder(null, 1);
@@ -736,7 +793,7 @@ public class TestArrowEncodingUtils
         blockBuilder.buildEntry(builder -> {
             java.util.UUID uuid1 = java.util.UUID.randomUUID();
             java.util.UUID uuid2 = java.util.UUID.randomUUID();
-            
+
             UUID.writeSlice(builder, Slices.wrappedBuffer(uuidToBytes(uuid1)));
             UUID.writeSlice(builder, Slices.wrappedBuffer(uuidToBytes(uuid2)));
         });
@@ -830,7 +887,7 @@ public class TestArrowEncodingUtils
 
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        
+
         assertThat(result).containsExactly(
                 List.of(Arrays.asList(1001L, "Alice", true)),
                 List.of(Arrays.asList(2002L, "Bob", false)),
@@ -845,7 +902,7 @@ public class TestArrowEncodingUtils
         RowType addressType = RowType.rowType(
                 RowType.field("street", VARCHAR),
                 RowType.field("city", VARCHAR));
-        
+
         RowType personType = RowType.rowType(
                 RowType.field("address", addressType),
                 RowType.field("age", BIGINT));
@@ -879,7 +936,7 @@ public class TestArrowEncodingUtils
 
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        
+
         assertThat(result).containsExactly(
                 List.of(Arrays.asList(Arrays.asList("123 Main St", "Springfield"), 30L)),
                 List.of(Arrays.asList(Arrays.asList("456 Oak Ave", "Riverside"), 25L)));
@@ -893,11 +950,11 @@ public class TestArrowEncodingUtils
         RowType nameType = RowType.rowType(
                 RowType.field("first", VARCHAR),
                 RowType.field("last", VARCHAR));
-                
+
         RowType personType = RowType.rowType(
                 RowType.field("name", nameType),
                 RowType.field("age", BIGINT));
-                
+
         RowType recordType = RowType.rowType(
                 RowType.field("person", personType),
                 RowType.field("active", BOOLEAN));
@@ -925,7 +982,7 @@ public class TestArrowEncodingUtils
 
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        
+
         assertThat(result).containsExactly(
                 List.of(Arrays.asList(Arrays.asList(Arrays.asList("John", "Doe"), 35L), true)));
     }
@@ -972,17 +1029,17 @@ public class TestArrowEncodingUtils
                 typed("bigint_col", BIGINT),
                 typed("varchar_col", VARCHAR),
                 typed("boolean_col", BOOLEAN));
-        
+
         BlockBuilder bigintBuilder = BIGINT.createBlockBuilder(null, 3);
         BIGINT.writeLong(bigintBuilder, 1L);
         bigintBuilder.appendNull();
         BIGINT.writeLong(bigintBuilder, 3L);
-        
+
         BlockBuilder varcharBuilder = VARCHAR.createBlockBuilder(null, 3);
         VARCHAR.writeSlice(varcharBuilder, utf8Slice("a"));
         varcharBuilder.appendNull();
         VARCHAR.writeSlice(varcharBuilder, utf8Slice("c"));
-        
+
         BlockBuilder booleanBuilder = BOOLEAN.createBlockBuilder(null, 3);
         BOOLEAN.writeBoolean(booleanBuilder, true);
         booleanBuilder.appendNull();
@@ -992,19 +1049,19 @@ public class TestArrowEncodingUtils
 
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(3);
-        
+
         // First row
         assertThat(result.get(0)).hasSize(3);
         assertThat(result.get(0).get(0)).isEqualTo(1L);
         assertThat(result.get(0).get(1)).isEqualTo("a");
         assertThat(result.get(0).get(2)).isEqualTo(true);
-        
+
         // Second row - all nulls
         assertThat(result.get(1)).hasSize(3);
         assertThat(result.get(1).get(0)).isNull();
         assertThat(result.get(1).get(1)).isNull();
         assertThat(result.get(1).get(2)).isNull();
-        
+
         // Third row
         assertThat(result.get(2)).hasSize(3);
         assertThat(result.get(2).get(0)).isEqualTo(3L);
@@ -1020,7 +1077,7 @@ public class TestArrowEncodingUtils
                 typed("bigint_col", BIGINT),
                 typed("varchar_col", VARCHAR),
                 typed("boolean_col", BOOLEAN));
-        
+
         Page page = new Page(
                 createTypedLongsBlock(BIGINT, 1L, 2L, 3L),
                 createStringsBlock("a", "b", "c"),
@@ -1093,17 +1150,17 @@ public class TestArrowEncodingUtils
     {
         return new Page(blocks);
     }
-    
+
     private static long packTimeWithTimeZone(long timeMillis, int offsetMinutes)
     {
         return (((long) offsetMinutes) << 40) | timeMillis;
     }
-    
-    private static long packDateTimeWithZone(long epochMillis, int offsetMinutes) 
+
+    private static long packDateTimeWithZone(long epochMillis, int offsetMinutes)
     {
         return (epochMillis << 12) | (offsetMinutes & 0xFFF);
     }
-    
+
     private static byte[] uuidToBytes(UUID uuid)
     {
         ByteBuffer bb = ByteBuffer.allocate(16);

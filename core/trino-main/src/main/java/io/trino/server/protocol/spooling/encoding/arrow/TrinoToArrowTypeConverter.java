@@ -46,6 +46,7 @@ import org.apache.arrow.vector.types.pojo.FieldType;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static org.apache.arrow.vector.types.DateUnit.DAY;
@@ -75,8 +76,12 @@ public final class TrinoToArrowTypeConverter
                 yield new Field(name, nullable(new ArrowType.Map(false)), List.of(entries));
             }
             case RowType rowType -> {
-                List<Field> children = rowType.getFields().stream()
-                        .map(field -> toArrowField(field.getName().orElse(""), field.getType(), nullable))
+                List<Field> children = IntStream.range(0, rowType.getFields().size())
+                        .mapToObj(i -> {
+                            RowType.Field field = rowType.getFields().get(i);
+                            String fieldName = field.getName().orElse("field" + i);
+                            return toArrowField(fieldName, field.getType(), nullable);
+                        })
                         .collect(toImmutableList());
                 yield new Field(name, nullable(ArrowType.Struct.INSTANCE), children);
             }
