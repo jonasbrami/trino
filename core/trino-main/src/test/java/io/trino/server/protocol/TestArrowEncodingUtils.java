@@ -1002,10 +1002,28 @@ public class TestArrowEncodingUtils
 
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(3);
-        // IntervalYearMonth values are returned as period strings by Arrow decoder
-        assertThat(result.get(0).get(0).toString()).isEqualTo("P15M");  // ISO-8601: 15 months
-        assertThat(result.get(1).get(0).toString()).isEqualTo("P25M");  // ISO-8601: 25 months
-        assertThat(result.get(2).get(0).toString()).isEqualTo("P-7M");  // ISO-8601: -7 months
+        // IntervalYearMonth values are returned as YYYY-MM format by Arrow decoder
+        assertThat(result.get(0).get(0).toString()).isEqualTo("1-3");   // 15 months = 1 year 3 months
+        assertThat(result.get(1).get(0).toString()).isEqualTo("2-1");   // 25 months = 2 years 1 month
+        assertThat(result.get(2).get(0).toString()).isEqualTo("-0-7");  // -7 months
+    }
+
+    @Test
+    public void testLargeIntervalYearMonthSerialization()
+            throws IOException
+    {
+        // Test for large interval that caused issues in distributed tests
+        // SELECT INTERVAL '32767' YEAR -> 32767 * 12 = 393204 months
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", IntervalYearMonthType.INTERVAL_YEAR_MONTH));
+        BlockBuilder blockBuilder = IntervalYearMonthType.INTERVAL_YEAR_MONTH.createBlockBuilder(null, 1);
+        IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, 393204); // 32767 years = 393204 months
+        Page page = page(blockBuilder.build());
+
+        // This should either succeed or fail with a clear Arrow encoding/decoding error
+        List<List<Object>> result = roundTrip(columns, page);
+        assertThat(result).hasSize(1);
+        // The large interval should be encoded as 32767-0 (32767 years, 0 months)
+        assertThat(result.get(0).get(0).toString()).isEqualTo("32767-0");
     }
 
     @Test

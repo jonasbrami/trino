@@ -38,16 +38,17 @@ The primary motivation for implementing columnar storage (Arrow) vs traditional 
 
 **Current Pain Points with JSON:**
 - Massive serialization/deserialization overhead for large result sets
-- Forces users to implement ad hoc "unload" solutions
-- Common workaround: creating temporary Hive/Iceberg tables in Parquet format before final consumption
-- Users must manually manage temporary table creation and cleanup
-- Added operational complexity
+- Forces users to implement workaround ad hoc "unload" solutions
+  - creating temporary Hive/Iceberg tables in Parquet format before final consumption
+  - Users must manually manage temporary table creation and cleanup
+  - Added operational complexity
 
 **Benefits of Arrow Spooling:**
-- Dramatically reduced serialization/deserialization costs through columnar format
-- Fast consumption of large query result through Trino's native Spooling Protocol 
-- Eliminates need for temporary table workarounds
-- Enables new use cases that were previously impractical due to performance constraints
+- Dramatically reduced serialization/deserialization costs through columnar format.
+- Fast consumption of large query result through Trino's native Spooling Protocol.
+- Eliminates need for temporary table or other ad-hoc workarounds.
+- Enables new use cases that were previously impractical due to performance constraints. 
+- Make the deserialization cost very small for the client, and make the query result ready be to used with other Arrow compatible libraries.
 
 
 ### Configuration
@@ -127,11 +128,36 @@ The following Trino data types are currently supported and tested with Arrow spo
 - **MAP** - Key-value mappings
 - **ROW** - Structured records with named fields (structs)
 
-*Note: All types maintain their precision and handle null values correctly during Arrow encoding/decoding round-trips.*
+### Unsupported Data Types (TODO)
 
-#### Test Impact
+The following Trino data types are currently **not supported** with Arrow spooling:
 
-This design choice results in expected test failures in `TestArrowSpooledDistributedQueries.java` where assertions check for preservation of original timezone information:
+#### Advanced Analytics Types
+- **HYPERLOGLOG** - Probabilistic cardinality estimation data structure
+- **QDIGEST** - Quantile digest for approximate percentile calculations  
+- **TDIGEST** - T-Digest for approximate percentile calculations
+- **SET_DIGEST** - Set digest for approximate set operations
+- **P4_HYPER_LOG_LOG** - P4 HyperLogLog for cardinality estimation
+
+#### Geometric and Spatial Types
+- **GEOMETRY** - Geometric shapes and spatial data
+- **SPHERICAL_GEOGRAPHY** - Spherical geography data for geographic calculations
+- **BING_TILE** - Bing Maps tile system coordinates
+- **KDB_TREE** - Spatial indexing tree structure
+
+#### Network and Identifier Types
+- **IPADDRESS** - IPv4 and IPv6 address types
+- **COLOR** - Color representation type
+
+#### Legacy Types  
+- **JSON2016** - Legacy JSON type (superseded by standard JSON)
+
+*Note: These types will throw an `UnsupportedOperationException` when used with Arrow spooling. Consider using alternative supported types or falling back to JSON spooling for queries involving these data types.*
+
+#### Tests
+
+- TestArrowEncodingUtils.java verifies unittest round trip from Trino page to Arrow vectors 
+- Ourdesign choice results in expected test failures in `TestArrowSpooledDistributedQueries.java` where assertions check for preservation of original timezone information:
 
 ```java
 // Example: Expected assertion failure
@@ -148,10 +174,6 @@ An alternative implementation could serialize timezone-aware values as Arrow str
 
 This approach would preserve timezone information but would require additional complexity in both encoding and decoding logic. Most people may prefer performance and simplicity of the serialization/deserialization over 100% feature matching with the existing JSON serialization
 Both approaches could coexist based on user configuration. 
-
-#### Current Limitations
-
-- **Interval Year to Month**: Support for `INTERVAL YEAR TO MONTH` is not yet implemented, causing the `testSelectLargeInterval` test to fail with an unsupported column type error.
 
 ## Development
 

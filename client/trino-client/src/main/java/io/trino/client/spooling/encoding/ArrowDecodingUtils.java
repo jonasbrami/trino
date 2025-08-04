@@ -22,6 +22,7 @@ import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.IntervalDayVector;
+import org.apache.arrow.vector.IntervalYearVector;
 import org.apache.arrow.vector.TimeMicroVector;
 import org.apache.arrow.vector.TimeMilliVector;
 import org.apache.arrow.vector.TimeNanoVector;
@@ -70,6 +71,7 @@ import static io.trino.client.ClientStandardTypes.DECIMAL;
 import static io.trino.client.ClientStandardTypes.DOUBLE;
 import static io.trino.client.ClientStandardTypes.INTEGER;
 import static io.trino.client.ClientStandardTypes.INTERVAL_DAY_TO_SECOND;
+import static io.trino.client.ClientStandardTypes.INTERVAL_YEAR_TO_MONTH;
 import static io.trino.client.ClientStandardTypes.JSON;
 import static io.trino.client.ClientStandardTypes.MAP;
 import static io.trino.client.ClientStandardTypes.REAL;
@@ -149,6 +151,8 @@ public class ArrowDecodingUtils
                 return new DecimalDecoder(checkedCast(vector, DecimalVector.class));
             case INTERVAL_DAY_TO_SECOND:
                 return new IntervalDayTimeDecoder(checkedCast(vector, IntervalDayVector.class));
+            case INTERVAL_YEAR_TO_MONTH:
+                return new IntervalYearMonthDecoder(checkedCast(vector, IntervalYearVector.class));
             case TIME:
                 return new TimeDecoder(vector);
             case TIME_WITH_TIME_ZONE:
@@ -159,7 +163,7 @@ public class ArrowDecodingUtils
                 return new RowDecoder(signature, checkedCast(vector, StructVector.class));
             case JSON:
                 return new JsonDecoder(checkedCast(vector, VarCharVector.class));
-//            case INTERVAL_YEAR_TO_MONTH:
+
 //            case IPADDRESS:
 //            case GEOMETRY:
 //            case SPHERICAL_GEOGRAPHY:
@@ -505,6 +509,47 @@ public class ArrowDecodingUtils
 
             Duration duration = vector.getObject(position);
             return formatMillis(duration.toNanos() / 1_000_000);
+        }
+
+        @Override
+        public void close()
+        {
+            vector.close();
+        }
+    }
+
+    private static class IntervalYearMonthDecoder
+            implements VectorTypeDecoder
+    {
+        private final IntervalYearVector vector;
+
+        public IntervalYearMonthDecoder(IntervalYearVector vector)
+        {
+            this.vector = requireNonNull(vector, "vector is null");
+        }
+
+        @Override
+        public Object decode(int position)
+        {
+            if (vector.isNull(position)) {
+                return null;
+            }
+
+            // IntervalYearVector stores months directly as int
+            int months = vector.get(position);
+            
+            // Handle negative intervals properly
+            if (months < 0) {
+                int absoluteMonths = Math.abs(months);
+                int years = absoluteMonths / 12;
+                int remainingMonths = absoluteMonths % 12;
+                return String.format("-%d-%d", years, remainingMonths);
+            }
+            else {
+                int years = months / 12;
+                int remainingMonths = months % 12;
+                return String.format("%d-%d", years, remainingMonths);
+            }
         }
 
         @Override
