@@ -116,7 +116,7 @@ public class SpoolingConfig
         return maxConcurrentSegments;
     }
 
-    @Config("protocol.spooling.max-concurrent-arrow-serialization")
+    @Config("protocol.spooling.arrow.max-concurrent-serialization")
     @ConfigDescription("Maximum number of Arrow segments that can be encoded concurrently")
     public SpoolingConfig setMaxConcurrentSegments(int maxConcurrentSegments)
     {

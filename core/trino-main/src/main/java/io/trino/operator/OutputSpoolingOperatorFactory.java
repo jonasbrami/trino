@@ -405,7 +405,7 @@ public class OutputSpoolingOperatorFactory
             // Warn if there's Arrow serialization backpressure
             if (queueLength > 0) {
                 log.warn("Thread %d - Arrow serialization backpressure detected with %d threads waiting. " +
-                        "Consider increasing 'protocol.spooling.max-concurrent-arrow-serialization' (current: %d available permits)", 
+                        "Consider increasing 'protocol.spooling.arrow.max-concurrent-serialization' (current: %d available permits)", 
                         threadId, queueLength, availablePermits);
             }
             

@@ -35,7 +35,7 @@ public class TestArrowSpooledDistributedQueries
         return ImmutableMap.of(
                 "protocol.spooling.encoding.arrow+zstd.enabled", "true",
                 "protocol.spooling.inlining.enabled", "false",
-                "protocol.spooling.max-concurrent-arrow-serialization", "5");
+                "protocol.spooling.arrow.max-concurrent-serialization", "5");
     }
 
     @Test

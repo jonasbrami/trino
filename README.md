@@ -70,7 +70,7 @@ To enable Arrow spooling, you need to:
    ```properties
    # Control Arrow serialization parallelism (default: 5)
    # Limits concurrent Arrow segment encoding operations per JVM
-   protocol.spooling.max-concurrent-arrow-serialization=5
+   protocol.spooling.arrow.max-concurrent-serialization=5
    
    # Control Arrow memory allocation (default: 200MB)
    # Sets the maximum memory Arrow buffer allocator can use
@@ -79,7 +79,7 @@ To enable Arrow spooling, you need to:
 
 #### Arrow Spooling additional Configuration
 
-- **`protocol.spooling.max-concurrent-arrow-serialization`**: Controls the maximum number of Arrow segments that can be encoded concurrently in a single JVM. This helps prevent resource exhaustion during heavy concurrent query processing. Higher values allow more parallelism but consume more CPU and memory.
+- **`protocol.spooling.arrow.max-concurrent-serialization`**: Controls the maximum number of Arrow segments that can be encoded concurrently in a single JVM. This helps prevent resource exhaustion during heavy concurrent query processing. Higher values allow more parallelism but consume more CPU and memory.
 
 - **`protocol.spooling.arrow.max-allocation`**: Sets the total memory budget for Arrow buffer allocation across all operations. This prevents Arrow operations from consuming excessive memory and provides a safety bound for memory usage. The allocator will reject new allocations once this limit is reached.
 

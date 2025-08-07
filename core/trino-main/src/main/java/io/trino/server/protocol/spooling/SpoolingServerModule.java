@@ -63,7 +63,7 @@ public class SpoolingServerModule
         // Only bind semaphore when spooling is enabled
         SpoolingConfig spoolingConfig = buildConfigObject(SpoolingConfig.class);
         int maxConcurrentSegments = spoolingConfig.getMaxConcurrentSegments();
-        log.info("Arrow spooling: Configured max concurrent segments = %d (protocol.spooling.max-concurrent-arrow-serialization)", maxConcurrentSegments);
+        log.info("Arrow spooling: Configured max concurrent segments = %d (protocol.spooling.arrow.max-concurrent-serialization)", maxConcurrentSegments);
         semaphoreBinder.setBinding().toInstance(new Semaphore(maxConcurrentSegments));
 
         newSetBinder(binder, SystemSessionPropertiesProvider.class).addBinding().to(SpoolingSessionProperties.class).in(Scopes.SINGLETON);
