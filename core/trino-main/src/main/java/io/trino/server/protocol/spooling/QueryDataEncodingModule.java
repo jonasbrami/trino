@@ -46,7 +46,9 @@ public class QueryDataEncodingModule
             encoderFactories.addBinding().to(JsonQueryDataEncoder.Lz4Factory.class).in(Scopes.SINGLETON);
         }
         if (config.isArrowIpcEnabled() || config.isArrowIpcZstdEnabled()) {
-            binder.bind(BufferAllocator.class).toInstance(new RootAllocator());
+            SpoolingConfig spoolingConfig = buildConfigObject(SpoolingConfig.class);
+            long maxAllocationBytes = spoolingConfig.getArrowMaxAllocation().toBytes();
+            binder.bind(BufferAllocator.class).toInstance(new RootAllocator(maxAllocationBytes));
             binder.bind(CompressionCodec.Factory.class).to(ArrowCompressionFactory.class).in(Scopes.SINGLETON);
 
             if (config.isArrowIpcEnabled()) {

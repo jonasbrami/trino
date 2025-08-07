@@ -66,6 +66,27 @@ To enable Arrow spooling, you need to:
    protocol.spooling.encoding.arrow+zstd.enabled=true
    ```
 
+3. **Optional: Configure Arrow performance and memory settings**:
+   ```properties
+   # Control Arrow serialization parallelism (default: 5)
+   # Limits concurrent Arrow segment encoding operations per JVM
+   protocol.spooling.max-concurrent-arrow-serialization=5
+   
+   # Control Arrow memory allocation (default: 200MB)
+   # Sets the maximum memory Arrow buffer allocator can use
+   protocol.spooling.arrow.max-allocation=200MB
+   ```
+
+#### Arrow Spooling additional Configuration
+
+- **`protocol.spooling.max-concurrent-arrow-serialization`**: Controls the maximum number of Arrow segments that can be encoded concurrently in a single JVM. This helps prevent resource exhaustion during heavy concurrent query processing. Higher values allow more parallelism but consume more CPU and memory.
+
+- **`protocol.spooling.arrow.max-allocation`**: Sets the total memory budget for Arrow buffer allocation across all operations. This prevents Arrow operations from consuming excessive memory and provides a safety bound for memory usage. The allocator will reject new allocations once this limit is reached.
+
+**Important Note on Arrow Memory Management**: Arrow uses **off-heap memory** (native memory outside the JVM heap) for its buffer allocations. This means Arrow memory usage is not managed by the JVM's garbage collector and does not count toward your `-Xmx` heap limit. Because this memory is not subject to Java's automatic memory management, we provide these explicit controls to prevent unbounded off-heap memory consumption that could lead to system memory exhaustion.
+
+**Technical Detail**: Arrow achieves its high performance by using Java's `Unsafe` API for direct memory access, which allows it to allocate and manipulate memory directly without JVM overhead. While this provides significant performance benefits for columnar data processing, it bypasses Java's memory management safeguards, making explicit memory controls essential.
+
 ### Python Client Support
 
 For asynchronous retrieval of Arrow spooled segments using PyArrow, see this fork of aiotrino: [jonasbrami/aiotrino](https://github.com/jonasbrami/aiotrino).

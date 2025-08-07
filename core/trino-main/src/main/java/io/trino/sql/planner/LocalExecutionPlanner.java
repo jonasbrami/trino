@@ -29,6 +29,7 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.SetMultimap;
 import com.google.common.primitives.Ints;
 import com.google.inject.Inject;
+
 import io.airlift.log.Logger;
 import io.airlift.units.DataSize;
 import io.trino.Session;
@@ -292,6 +293,7 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -430,6 +432,7 @@ public class LocalExecutionPlanner
     private final SpillerFactory spillerFactory;
     private final QueryDataEncoders encoders;
     private final Optional<SpoolingManager> spoolingManager;
+    private final Optional<Semaphore> segmentSemaphore;
     private final SingleStreamSpillerFactory singleStreamSpillerFactory;
     private final PartitioningSpillerFactory partitioningSpillerFactory;
     private final PagesIndex.Factory pagesIndexFactory;
@@ -484,6 +487,7 @@ public class LocalExecutionPlanner
             SpillerFactory spillerFactory,
             QueryDataEncoders encoders,
             Optional<SpoolingManager> spoolingManager,
+            Optional<Semaphore> segmentSemaphore,
             SingleStreamSpillerFactory singleStreamSpillerFactory,
             PartitioningSpillerFactory partitioningSpillerFactory,
             PagesIndex.Factory pagesIndexFactory,
@@ -514,6 +518,7 @@ public class LocalExecutionPlanner
         this.spillerFactory = requireNonNull(spillerFactory, "spillerFactory is null");
         this.encoders = requireNonNull(encoders, "encoders is null");
         this.spoolingManager = requireNonNull(spoolingManager, "spoolingManager is null");
+        this.segmentSemaphore = requireNonNull(segmentSemaphore, "segmentSemaphore is null");
         this.singleStreamSpillerFactory = requireNonNull(singleStreamSpillerFactory, "singleStreamSpillerFactory is null");
         this.partitioningSpillerFactory = requireNonNull(partitioningSpillerFactory, "partitioningSpillerFactory is null");
         this.maxPartialAggregationMemorySize = taskManagerConfig.getMaxPartialAggregationMemoryUsage();
@@ -1011,7 +1016,8 @@ public class LocalExecutionPlanner
                     context.getNextOperatorId(),
                     node.getId(),
                     () -> queryDataEncoder,
-                    spoolingManager.orElseThrow());
+                    spoolingManager.orElseThrow(),
+                    segmentSemaphore.orElseThrow());
 
             return new SpooledPhysicalOperation(outputSpoolingOperatorFactory, operation);
         }

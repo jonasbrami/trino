@@ -22,10 +22,13 @@ import com.google.inject.TypeLiteral;
 import com.google.inject.multibindings.OptionalBinder;
 import com.google.inject.multibindings.ProvidesIntoSet;
 import io.airlift.configuration.AbstractConfigurationAwareModule;
+import io.airlift.log.Logger;
 import io.trino.SystemSessionPropertiesProvider;
 import io.trino.server.ServerConfig;
 import io.trino.server.protocol.spooling.SpoolingConfig.SegmentRetrievalMode;
 import io.trino.spi.spool.SpoolingManager;
+
+import java.util.concurrent.Semaphore;
 
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 import static com.google.inject.multibindings.OptionalBinder.newOptionalBinder;
@@ -37,6 +40,7 @@ import static java.util.Objects.requireNonNull;
 public class SpoolingServerModule
         extends AbstractConfigurationAwareModule
 {
+    private static final Logger log = Logger.get(SpoolingServerModule.class);
     @Override
     protected void setup(Binder binder)
     {
@@ -45,16 +49,26 @@ public class SpoolingServerModule
         binder.bind(SpoolingManagerRegistry.class).in(Scopes.SINGLETON);
         OptionalBinder<SpoolingManager> spoolingManagerBinder = newOptionalBinder(binder, new TypeLiteral<>() {});
         newOptionalBinder(binder, SpoolingConfig.class);
+
+        // Optional binder for segment semaphore
+        OptionalBinder<Semaphore> semaphoreBinder = newOptionalBinder(binder, Semaphore.class);
+
         SpoolingEnabledConfig spoolingEnabledConfig = buildConfigObject(SpoolingEnabledConfig.class);
         if (!spoolingEnabledConfig.isEnabled()) {
             binder.bind(QueryDataEncoder.EncoderSelector.class).toInstance(noEncoder());
+            // Don't bind semaphore when spooling is disabled
             return;
         }
+
+        // Only bind semaphore when spooling is enabled
+        SpoolingConfig spoolingConfig = buildConfigObject(SpoolingConfig.class);
+        int maxConcurrentSegments = spoolingConfig.getMaxConcurrentSegments();
+        log.info("Arrow spooling: Configured max concurrent segments = %d (protocol.spooling.max-concurrent-arrow-serialization)", maxConcurrentSegments);
+        semaphoreBinder.setBinding().toInstance(new Semaphore(maxConcurrentSegments));
 
         newSetBinder(binder, SystemSessionPropertiesProvider.class).addBinding().to(SpoolingSessionProperties.class).in(Scopes.SINGLETON);
 
         boolean isCoordinator = buildConfigObject(ServerConfig.class).isCoordinator();
-        SpoolingConfig spoolingConfig = buildConfigObject(SpoolingConfig.class);
         binder.bind(QueryDataEncoder.EncoderSelector.class).to(PreferredQueryDataEncoderSelector.class).in(Scopes.SINGLETON);
 
         SegmentRetrievalMode mode = spoolingConfig.getRetrievalMode();

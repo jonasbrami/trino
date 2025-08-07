@@ -32,6 +32,11 @@ import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static io.trino.util.Ciphers.is256BitSecretKeySpec;
 import static java.util.Base64.getDecoder;
 
+import java.time.Duration;
+
+import static io.airlift.units.DataSize.Unit.BYTE;
+import static java.time.temporal.ChronoUnit.MINUTES;
+
 public class SpoolingConfig
 {
     private SecretKey sharedSecretKey;
@@ -42,6 +47,10 @@ public class SpoolingConfig
     private DataSize inliningMaxSize = DataSize.of(3, MEGABYTE);
     private DataSize initialSegmentSize = DataSize.of(8, MEGABYTE);
     private DataSize maximumSegmentSize = DataSize.of(16, MEGABYTE);
+    private int maxConcurrentSegments = 5;
+    private Duration segmentTtl = Duration.of(30, MINUTES);
+    // Default: 200MB for spooling arrow allocator
+    private DataSize arrowMaxAllocation = DataSize.of(200, MEGABYTE);
 
     @NotNull
     public SecretKey getSharedSecretKey()
@@ -102,6 +111,19 @@ public class SpoolingConfig
         return this;
     }
 
+    public int getMaxConcurrentSegments()
+    {
+        return maxConcurrentSegments;
+    }
+
+    @Config("protocol.spooling.max-concurrent-arrow-serialization")
+    @ConfigDescription("Maximum number of Arrow segments that can be encoded concurrently")
+    public SpoolingConfig setMaxConcurrentSegments(int maxConcurrentSegments)
+    {
+        this.maxConcurrentSegments = maxConcurrentSegments;
+        return this;
+    }
+
     public boolean isInliningEnabled()
     {
         return inliningEnabled;
@@ -142,6 +164,20 @@ public class SpoolingConfig
     public SpoolingConfig setInliningMaxSize(DataSize inliningMaxSize)
     {
         this.inliningMaxSize = inliningMaxSize;
+        return this;
+    }
+
+    @MinDataSize("10MB")
+    public DataSize getArrowMaxAllocation()
+    {
+        return arrowMaxAllocation;
+    }
+
+    @Config("protocol.spooling.arrow.max-allocation")
+    @ConfigDescription("Maximum memory allocation allowed for Arrow buffer allocator in spooling")
+    public SpoolingConfig setArrowMaxAllocation(DataSize arrowMaxAllocation)
+    {
+        this.arrowMaxAllocation = arrowMaxAllocation;
         return this;
     }
 

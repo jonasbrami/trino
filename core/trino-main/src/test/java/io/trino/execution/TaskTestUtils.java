@@ -172,6 +172,7 @@ public final class TaskTestUtils
                 }),
                 new QueryDataEncoders(new SpoolingEnabledConfig(), Set.of()),
                 Optional.empty(),
+                Optional.empty(), // segment-semaphore - not needed for tests
                 (types, spillContext, memoryContext) -> {
                     throw new UnsupportedOperationException();
                 },

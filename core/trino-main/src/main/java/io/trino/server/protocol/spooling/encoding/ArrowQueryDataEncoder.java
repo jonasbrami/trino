@@ -120,7 +120,7 @@ public class ArrowQueryDataEncoder
         public QueryDataEncoder create(Session session, List<OutputColumn> columns)
         {
             return new ArrowQueryDataEncoder(
-                    allocator.newChildAllocator(session.getQueryId().toString(), Integer.MAX_VALUE, Integer.MAX_VALUE),
+                    allocator.newChildAllocator(session.getQueryId().toString(), 0, Long.MAX_VALUE),
                     NoCompressionCodec.Factory.INSTANCE,
                     CompressionUtil.CodecType.NO_COMPRESSION,
                     columns);
@@ -150,7 +150,7 @@ public class ArrowQueryDataEncoder
         public QueryDataEncoder create(Session session, List<OutputColumn> columns)
         {
             return new ArrowQueryDataEncoder(
-                    allocator.newChildAllocator(session.getQueryId().toString(), Integer.MAX_VALUE, Integer.MAX_VALUE),
+                    allocator.newChildAllocator(session.getQueryId().toString(), 0, Long.MAX_VALUE),
                     compressionFactory,
                     CompressionUtil.CodecType.ZSTD,
                     columns);
