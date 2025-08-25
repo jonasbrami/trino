@@ -773,7 +773,6 @@ public class PlanTester
                 new GenericSpillerFactory(unsupportedSingleStreamSpillerFactory()),
                 new QueryDataEncoders(new SpoolingEnabledConfig(), Set.of()),
                 Optional.empty(),
-                Optional.empty(), // segment-semaphore - not needed for tests
                 unsupportedSingleStreamSpillerFactory(),
                 unsupportedPartitioningSpillerFactory(),
                 new PagesIndex.TestingFactory(false),

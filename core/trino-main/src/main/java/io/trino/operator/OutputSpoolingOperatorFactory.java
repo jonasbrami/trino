@@ -41,7 +41,6 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -79,19 +78,17 @@ public class OutputSpoolingOperatorFactory
     private final SpoolingManager spoolingManager;
     private final Supplier<QueryDataEncoder> queryDataEncoderSupplier;
     private final QueryDataEncoder queryDataEncoder;
-    private final Semaphore segmentSemaphore;
     private final AtomicInteger encoderReferencesCount = new AtomicInteger(1);
 
     private boolean closed;
 
-    public OutputSpoolingOperatorFactory(int operatorId, PlanNodeId planNodeId, Supplier<QueryDataEncoder> queryDataEncoderSupplier, SpoolingManager spoolingManager, Semaphore segmentSemaphore)
+    public OutputSpoolingOperatorFactory(int operatorId, PlanNodeId planNodeId, Supplier<QueryDataEncoder> queryDataEncoderSupplier, SpoolingManager spoolingManager)
     {
         this.operatorId = operatorId;
         this.planNodeId = requireNonNull(planNodeId, "planNodeId is null");
         this.queryDataEncoderSupplier = requireNonNull(queryDataEncoderSupplier, "queryDataEncoder is null");
         this.queryDataEncoder = queryDataEncoderSupplier.get();
         this.spoolingManager = requireNonNull(spoolingManager, "spoolingManager is null");
-        this.segmentSemaphore = requireNonNull(segmentSemaphore, "segmentSemaphore is null");
     }
 
     @Override
@@ -126,7 +123,7 @@ public class OutputSpoolingOperatorFactory
                 return queryDataEncoder.encoding();
             }
         };
-        return new OutputSpoolingOperator(operatorContext, trackingQueryDataEncoder, spoolingManager, segmentSemaphore);
+        return new OutputSpoolingOperator(operatorContext, trackingQueryDataEncoder, spoolingManager);
     }
 
     @Override
@@ -146,7 +143,7 @@ public class OutputSpoolingOperatorFactory
     @Override
     public OperatorFactory duplicate()
     {
-        return new OutputSpoolingOperatorFactory(operatorId, planNodeId, queryDataEncoderSupplier, spoolingManager, segmentSemaphore);
+        return new OutputSpoolingOperatorFactory(operatorId, planNodeId, queryDataEncoderSupplier, spoolingManager);
     }
 
     static class OutputSpoolingOperator
@@ -174,9 +171,8 @@ public class OutputSpoolingOperatorFactory
         private final OperatorContext operatorContext;
         private final AggregatedMemoryContext aggregatedMemoryContext;
         private final LocalMemoryContext localMemoryContext;
-            private final QueryDataEncoder queryDataEncoder;
-    private final SpoolingManager spoolingManager;
-    private final Semaphore segmentSemaphore;
+        private final QueryDataEncoder queryDataEncoder;
+        private final SpoolingManager spoolingManager;
         private final PageBuffer buffer;
         private final OperationTiming spoolingTiming = new OperationTiming();
         private final AtomicLong spooledEncodedBytes = new AtomicLong();
@@ -184,7 +180,7 @@ public class OutputSpoolingOperatorFactory
 
         private Page outputPage;
 
-        public OutputSpoolingOperator(OperatorContext operatorContext, QueryDataEncoder queryDataEncoder, SpoolingManager spoolingManager, Semaphore segmentSemaphore)
+        public OutputSpoolingOperator(OperatorContext operatorContext, QueryDataEncoder queryDataEncoder, SpoolingManager spoolingManager)
         {
             this.operatorContext = requireNonNull(operatorContext, "operatorContext is null");
             this.clientZoneId = operatorContext.getSession().getTimeZoneKey().getZoneId();
@@ -200,7 +196,6 @@ public class OutputSpoolingOperatorFactory
             this.aggregatedMemoryContext = operatorContext.newAggregateUserMemoryContext();
             this.queryDataEncoder = requireNonNull(queryDataEncoder, "queryDataEncoder is null");
             this.spoolingManager = requireNonNull(spoolingManager, "spoolingManager is null");
-            this.segmentSemaphore = requireNonNull(segmentSemaphore, "segmentSemaphore is null");
             this.buffer = PageBuffer.create();
             this.localMemoryContext = aggregatedMemoryContext.newLocalMemoryContext(OutputSpoolingOperator.class.getSimpleName());
 
@@ -306,10 +301,6 @@ public class OutputSpoolingOperatorFactory
                 }
 
                 // Spool the partition as it is large enough
-                boolean isArrowEncoding = queryDataEncoder.encoding().startsWith("arrow");
-                log.debug("Spooling partition - encoding: %s, isArrowEncoding: %s, rows: %d, size: %d", 
-                        queryDataEncoder.encoding(), isArrowEncoding, rows, size);
-                
                 SpooledSegmentHandle segmentHandle = spoolingManager.create(new SpoolingContext(
                         queryDataEncoder.encoding(),
                         operatorContext.getDriverContext().getSession().getQueryId(),
@@ -319,26 +310,11 @@ public class OutputSpoolingOperatorFactory
                 OperationTimer overallTimer = new OperationTimer(false);
                 try (OutputStream output = spoolingManager.createOutputStream(segmentHandle)) {
                     spooledSegmentsCount.incrementAndGet();
-                    
-                    // Only protect the actual Arrow unsafe buffer allocation period
-                    DataAttributes attributes;
-                    if (isArrowEncoding) {
-                        acquireArrowSemaphore();
-                        try {
-                            // Arrow vectors (off-heap unsafe memory) allocated and released within encodeTo()
-                            attributes = queryDataEncoder.encodeTo(output, partition);
-                        }
-                        finally {
-                            // Release immediately after Arrow unsafe buffers are freed
-                            releaseArrowSemaphore();
-                        }
-                    }
-                    else {
-                        // Non-Arrow encoders don't need semaphore protection
-                        attributes = queryDataEncoder.encodeTo(output, partition);
-                    }
-                    
-                    // Build metadata after Arrow memory is released - no semaphore needed
+
+                    // Encode the partition data - encoder handles its own resource management
+                    DataAttributes attributes = queryDataEncoder.encodeTo(output, partition);
+
+                    // Build metadata after encoding is complete
                     attributes = attributes.toBuilder()
                             .set(ROWS_COUNT, rows)
                             .set(EXPIRES_AT, ZonedDateTime.ofInstant(segmentHandle.expirationTime(), clientZoneId).toLocalDateTime().toString())
@@ -390,44 +366,6 @@ public class OutputSpoolingOperatorFactory
             return page.stream()
                     .mapToLong(reduce)
                     .sum();
-        }
-
-        private void acquireArrowSemaphore()
-        {
-            long threadId = Thread.currentThread().getId();
-            // Log detailed semaphore state before acquiring
-            int availablePermits = segmentSemaphore.availablePermits();
-            int queueLength = segmentSemaphore.getQueueLength();
-            boolean hasQueuedThreads = segmentSemaphore.hasQueuedThreads();
-            log.debug("Thread %d - Semaphore state before acquire - Available permits: %d, Queue length: %d, Has queued threads: %s", 
-                    threadId, availablePermits, queueLength, hasQueuedThreads);
-            
-            // Warn if there's Arrow serialization backpressure
-            if (queueLength > 0) {
-                log.warn("Thread %d - Arrow serialization backpressure detected with %d threads waiting. " +
-                        "Consider increasing 'protocol.spooling.arrow.max-concurrent-serialization' (current: %d available permits)", 
-                        threadId, queueLength, availablePermits);
-            }
-            
-            segmentSemaphore.acquireUninterruptibly();
-            
-            // Log state after successful acquisition
-            log.debug("Thread %d - Semaphore acquired successfully - Available permits now: %d, Queue length: %d", 
-                    threadId, segmentSemaphore.availablePermits(), segmentSemaphore.getQueueLength());
-        }
-
-        private void releaseArrowSemaphore()
-        {
-            long threadId = Thread.currentThread().getId();
-            // Log state before release
-            log.debug("Thread %d - Releasing semaphore - Available permits before release: %d, Queue length: %d", 
-                    threadId, segmentSemaphore.availablePermits(), segmentSemaphore.getQueueLength());
-            
-            segmentSemaphore.release();
-            
-            // Log state after release
-            log.debug("Thread %d - Semaphore released - Available permits after release: %d, Queue length: %d, Has queued threads: %s", 
-                    threadId, segmentSemaphore.availablePermits(), segmentSemaphore.getQueueLength(), segmentSemaphore.hasQueuedThreads());
         }
 
         @Override

@@ -28,8 +28,6 @@ import io.trino.server.ServerConfig;
 import io.trino.server.protocol.spooling.SpoolingConfig.SegmentRetrievalMode;
 import io.trino.spi.spool.SpoolingManager;
 
-import java.util.concurrent.Semaphore;
-
 import static com.google.inject.multibindings.Multibinder.newSetBinder;
 import static com.google.inject.multibindings.OptionalBinder.newOptionalBinder;
 import static io.airlift.jaxrs.JaxrsBinder.jaxrsBinder;
@@ -41,6 +39,7 @@ public class SpoolingServerModule
         extends AbstractConfigurationAwareModule
 {
     private static final Logger log = Logger.get(SpoolingServerModule.class);
+
     @Override
     protected void setup(Binder binder)
     {
@@ -50,27 +49,18 @@ public class SpoolingServerModule
         OptionalBinder<SpoolingManager> spoolingManagerBinder = newOptionalBinder(binder, new TypeLiteral<>() {});
         newOptionalBinder(binder, SpoolingConfig.class);
 
-        // Optional binder for segment semaphore
-        OptionalBinder<Semaphore> semaphoreBinder = newOptionalBinder(binder, Semaphore.class);
-
         SpoolingEnabledConfig spoolingEnabledConfig = buildConfigObject(SpoolingEnabledConfig.class);
         if (!spoolingEnabledConfig.isEnabled()) {
             binder.bind(QueryDataEncoder.EncoderSelector.class).toInstance(noEncoder());
-            // Don't bind semaphore when spooling is disabled
             return;
         }
-
-        // Only bind semaphore when spooling is enabled
-        SpoolingConfig spoolingConfig = buildConfigObject(SpoolingConfig.class);
-        int maxConcurrentSegments = spoolingConfig.getMaxConcurrentSegments();
-        log.info("Arrow spooling: Configured max concurrent segments = %d (protocol.spooling.arrow.max-concurrent-serialization)", maxConcurrentSegments);
-        semaphoreBinder.setBinding().toInstance(new Semaphore(maxConcurrentSegments));
 
         newSetBinder(binder, SystemSessionPropertiesProvider.class).addBinding().to(SpoolingSessionProperties.class).in(Scopes.SINGLETON);
 
         boolean isCoordinator = buildConfigObject(ServerConfig.class).isCoordinator();
         binder.bind(QueryDataEncoder.EncoderSelector.class).to(PreferredQueryDataEncoderSelector.class).in(Scopes.SINGLETON);
 
+        SpoolingConfig spoolingConfig = buildConfigObject(SpoolingConfig.class);
         SegmentRetrievalMode mode = spoolingConfig.getRetrievalMode();
         if (isCoordinator) {
             jaxrsBinder(binder).bind(CoordinatorSegmentResource.class);

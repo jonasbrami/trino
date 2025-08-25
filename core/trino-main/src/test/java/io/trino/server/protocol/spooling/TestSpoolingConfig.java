@@ -44,7 +44,7 @@ class TestSpoolingConfig
                 .setRetrievalMode(STORAGE)
                 .setInitialSegmentSize(DataSize.of(8, MEGABYTE))
                 .setMaximumSegmentSize(DataSize.of(16, MEGABYTE))
-                .setMaxConcurrentSegments(1)
+                .setMaxConcurrentSegmentSerialization(1)
                 .setArrowMaxAllocation(DataSize.of(200, MEGABYTE)));
     }
 
