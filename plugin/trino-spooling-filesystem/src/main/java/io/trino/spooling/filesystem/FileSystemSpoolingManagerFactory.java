@@ -17,7 +17,6 @@ import com.google.inject.Injector;
 import io.airlift.bootstrap.Bootstrap;
 import io.opentelemetry.api.OpenTelemetry;
 import io.trino.plugin.base.jmx.MBeanServerModule;
-import io.trino.spi.Node;
 import io.trino.spi.spool.SpoolingManager;
 import io.trino.spi.spool.SpoolingManagerContext;
 import io.trino.spi.spool.SpoolingManagerFactory;
@@ -47,7 +46,6 @@ public class FileSystemSpoolingManagerFactory
                 binder -> {
                     binder.bind(SpoolingManagerContext.class).toInstance(context);
                     binder.bind(OpenTelemetry.class).toInstance(context.getOpenTelemetry());
-                    binder.bind(Node.class).toInstance(context.getCurrentNode());
                 });
 
         Injector injector = app

@@ -48,6 +48,7 @@ import jakarta.ws.rs.core.Response.ResponseBuilder;
 import java.net.URLEncoder;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -214,12 +215,13 @@ public class ExecutingStatementResource
     {
         ListenableFuture<QueryResultsResponse> queryResultsFuture = query.waitForResults(token, externalUriInfo, MAX_WAIT_TIME);
 
-        ListenableFuture<Response> response = Futures.transform(queryResultsFuture, this::toResponse, directExecutor());
+        ListenableFuture<Response> response = Futures.transform(queryResultsFuture, results ->
+                toResponse(results, query.getQueryInfo().getSession().getQueryDataEncoding()), directExecutor());
 
         bindAsyncResponse(asyncResponse, response, responseExecutor);
     }
 
-    private Response toResponse(QueryResultsResponse resultsResponse)
+    private Response toResponse(QueryResultsResponse resultsResponse, Optional<String> queryDataEncoding)
     {
         ResponseBuilder response = Response.ok(resultsResponse.queryResults());
 
@@ -273,8 +275,7 @@ public class ExecutingStatementResource
             response.encoding("identity");
         }
 
-        resultsResponse.queryDataEncoding()
-                .ifPresent(encoding -> response.header(TRINO_HEADERS.responseQueryDataEncoding(), encoding));
+        queryDataEncoding.ifPresent(encoding -> response.header(TRINO_HEADERS.responseQueryDataEncoding(), encoding));
 
         return response.build();
     }

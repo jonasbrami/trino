@@ -62,7 +62,6 @@ import static io.trino.operator.SpoolingController.Mode.SPOOL;
 import static io.trino.server.protocol.spooling.SpooledMetadataBlockSerde.serialize;
 import static io.trino.server.protocol.spooling.SpoolingSessionProperties.getInitialSegmentSize;
 import static io.trino.server.protocol.spooling.SpoolingSessionProperties.getMaxSegmentSize;
-import static io.trino.server.protocol.spooling.SpoolingSessionProperties.isInliningEnabled;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -154,7 +153,6 @@ public class OutputSpoolingOperatorFactory
         private final AtomicLong inlinedSegmentsCount = new AtomicLong();
         private final long maxSegmentSize;
         private final long minSegmentSize;
-        private final boolean inliningEnabled;
 
         enum State
         {
@@ -189,7 +187,6 @@ public class OutputSpoolingOperatorFactory
 
             this.minSegmentSize = getInitialSegmentSize(operatorContext.getSession()).toBytes();
             this.maxSegmentSize = getMaxSegmentSize(operatorContext.getSession()).toBytes();
-            this.inliningEnabled = isInliningEnabled(operatorContext.getSession());
             this.aggregatedMemoryContext = operatorContext.newAggregateUserMemoryContext();
             this.queryDataEncoder = requireNonNull(queryDataEncoder, "queryDataEncoder is null");
             this.spoolingManager = requireNonNull(spoolingManager, "spoolingManager is null");
@@ -285,7 +282,7 @@ public class OutputSpoolingOperatorFactory
                 long rows = reduce(partition, Page::getPositionCount);
                 long size = reduce(partition, Page::getSizeInBytes);
 
-                if (lastPage && inliningEnabled && isLastPartition && size < SPOOLING_THRESHOLD) {
+                if (lastPage && isLastPartition && size < SPOOLING_THRESHOLD) {
                     // If the last partition is small enough, inline it to save the overhead of spooling
                     spooledMetadataBuilder.addAll(inline(partition));
                     continue;
