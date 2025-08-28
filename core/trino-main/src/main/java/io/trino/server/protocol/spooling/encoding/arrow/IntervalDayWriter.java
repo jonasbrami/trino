@@ -40,7 +40,7 @@ public final class IntervalDayWriter
     {
         long intervalDayTime = IntervalDayTimeType.INTERVAL_DAY_TIME.getLong(block, position);
         int days = toIntExact(intervalDayTime / MILLIS_IN_DAY);
-        int millis = toIntExact((intervalDayTime % MILLIS_IN_DAY) / 1000000);
+        int millis = toIntExact((intervalDayTime % MILLIS_IN_DAY));
         vector.set(position, days, millis);
     }
 }
