@@ -180,6 +180,8 @@
             --sun-misc-unsafe-memory-access=allow
             <!-- # Disable superfluous bootstrap logging in tests -->
             -Dairlift.quiet=true
+            <!-- for arrow-memory -->
+            --add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED
         </air.test.jvm.additional-arguments.default>
         <air.test.jvm.additional-arguments>${air.test.jvm.additional-arguments.default}</air.test.jvm.additional-arguments>
 
@@ -2697,6 +2699,37 @@
                                 </conflictingDependencies>
                                 <resources>
                                     <resource>about.html</resource>
+                                </resources>
+                            </exception>
+                            <exception>
+                                <conflictingDependencies>
+                                    <dependency>
+                                        <groupId>org.apache.arrow</groupId>
+                                        <artifactId>arrow-compression</artifactId>
+                                    </dependency>
+                                    <dependency>
+                                        <groupId>org.apache.arrow</groupId>
+                                        <artifactId>arrow-format</artifactId>
+                                    </dependency>
+                                    <dependency>
+                                        <groupId>org.apache.arrow</groupId>
+                                        <artifactId>arrow-memory-core</artifactId>
+                                    </dependency>
+                                    <dependency>
+                                        <groupId>org.apache.arrow</groupId>
+                                        <artifactId>arrow-memory-netty</artifactId>
+                                    </dependency>
+                                    <dependency>
+                                        <groupId>org.apache.arrow</groupId>
+                                        <artifactId>arrow-memory-netty-buffer-patch</artifactId>
+                                    </dependency>
+                                    <dependency>
+                                        <groupId>org.apache.arrow</groupId>
+                                        <artifactId>arrow-memory-unsafe</artifactId>
+                                    </dependency>
+                                </conflictingDependencies>
+                                <resources>
+                                    <resource>arrow-git.properties</resource>
                                 </resources>
                             </exception>
                         </exceptions>
