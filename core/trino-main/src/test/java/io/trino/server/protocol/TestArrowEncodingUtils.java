@@ -26,8 +26,10 @@ import io.trino.spi.Page;
 import io.trino.spi.block.ArrayBlockBuilder;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
+import io.trino.spi.block.DictionaryBlock;
 import io.trino.spi.block.MapBlockBuilder;
 import io.trino.spi.block.RowBlockBuilder;
+import io.trino.spi.block.RunLengthEncodedBlock;
 import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.CharType;
 import io.trino.spi.type.LongTimestamp;
@@ -644,6 +646,8 @@ public class TestArrowEncodingUtils
 
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(2);
+        assertThat(result.get(0).get(0)).isEqualTo(uuid1.toString());
+        assertThat(result.get(1).get(0)).isEqualTo(uuid2.toString());
     }
 
     @Test
@@ -745,6 +749,97 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testArraySerializationWithDictionaryBlock()
+            throws IOException
+    {
+        // Ensures ArrayWriter handles DictionaryBlock-wrapped arrays (e.g. after hash joins)
+        ArrayType arrayType = new ArrayType(BIGINT);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", arrayType));
+        ArrayBlockBuilder blockBuilder = arrayType.createBlockBuilder(null, 3);
+
+        blockBuilder.buildEntry(builder -> {
+            BIGINT.writeLong(builder, 10L);
+            BIGINT.writeLong(builder, 20L);
+        });
+        blockBuilder.buildEntry(builder -> {
+            BIGINT.writeLong(builder, 30L);
+            BIGINT.writeLong(builder, 40L);
+        });
+        blockBuilder.buildEntry(builder -> {
+            BIGINT.writeLong(builder, 50L);
+        });
+
+        Block rawBlock = blockBuilder.build();
+        // Reorder via dictionary indices: [2, 0, 1]
+        Block dictionaryBlock = DictionaryBlock.create(3, rawBlock, new int[] {2, 0, 1});
+
+        List<List<Object>> result = roundTrip(columns, page(dictionaryBlock));
+
+        assertThat(result).containsExactly(
+                List.of(List.of(50L)),
+                List.of(List.of(10L, 20L)),
+                List.of(List.of(30L, 40L)));
+    }
+
+    @Test
+    public void testArraySerializationWithRunLengthEncodedBlock()
+            throws IOException
+    {
+        // Ensures ArrayWriter handles RunLengthEncodedBlock-wrapped arrays (e.g. constant columns)
+        ArrayType arrayType = new ArrayType(BIGINT);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", arrayType));
+        ArrayBlockBuilder blockBuilder = arrayType.createBlockBuilder(null, 1);
+
+        blockBuilder.buildEntry(builder -> {
+            BIGINT.writeLong(builder, 100L);
+            BIGINT.writeLong(builder, 200L);
+        });
+
+        Block rleBlock = RunLengthEncodedBlock.create(blockBuilder.build(), 4);
+
+        List<List<Object>> result = roundTrip(columns, page(rleBlock));
+
+        assertThat(result).hasSize(4);
+        assertThat(result).allMatch(row -> row.equals(List.of(List.of(100L, 200L))));
+    }
+
+    @Test
+    public void testScalarDictionaryBlockRoundTrip()
+            throws IOException
+    {
+        // Simulates hash join probe-side output: LookupJoinPageBuilder.build() wraps
+        // probe blocks in DictionaryBlock via Block.getPositions() when indices are non-sequential
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", BIGINT), typed("col1", VARCHAR));
+
+        // Build underlying value blocks (the "probe page" that the join references)
+        BlockBuilder longBuilder = BIGINT.createFixedSizeBlockBuilder(5);
+        for (long v : new long[] {100L, 200L, 300L, 400L, 500L}) {
+            BIGINT.writeLong(longBuilder, v);
+        }
+        Block longBlock = longBuilder.build();
+
+        Block varcharBlock = createStringsBlock("alpha", "beta", "gamma", "delta", "epsilon");
+
+        // Wrap in DictionaryBlock with non-sequential indices (as hash join would produce)
+        // This selects rows: [2, 0, 4, 2] -> [300/gamma, 100/alpha, 500/epsilon, 300/gamma]
+        int[] probeIndices = {2, 0, 4, 2};
+        Block dictLongs = DictionaryBlock.create(4, longBlock, probeIndices);
+        Block dictVarchars = DictionaryBlock.create(4, varcharBlock, probeIndices);
+
+        // Verify these are actually DictionaryBlock instances
+        assertThat(dictLongs).isInstanceOf(DictionaryBlock.class);
+        assertThat(dictVarchars).isInstanceOf(DictionaryBlock.class);
+
+        List<List<Object>> result = roundTrip(columns, page(dictLongs, dictVarchars));
+
+        assertThat(result).containsExactly(
+                List.of(300L, "gamma"),
+                List.of(100L, "alpha"),
+                List.of(500L, "epsilon"),
+                List.of(300L, "gamma"));
     }
 
     @Test

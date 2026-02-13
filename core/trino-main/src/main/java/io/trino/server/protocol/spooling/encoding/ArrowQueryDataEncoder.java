@@ -81,12 +81,14 @@ public class ArrowQueryDataEncoder
     public DataAttributes encodeTo(OutputStream output, List<Page> pages)
             throws IOException
     {
-        // Acquire semaphore to protect Arrow off-heap memory allocation
-        if (semaphore.isPresent()) {
-            acquireArrowSemaphore(semaphore.get());
-        }
+        semaphore.ifPresent(s -> {
+            if (s.hasQueuedThreads()) {
+                log.debug("Arrow serialization backpressure: %d threads waiting, %d permits available",
+                        s.getQueueLength(), s.availablePermits());
+            }
+            s.acquireUninterruptibly();
+        });
         try {
-            // Arrow vectors (off-heap unsafe memory) allocated and released within this try block
             try (VectorSchemaRoot schema = VectorSchemaRoot.create(new Schema(fields), allocator)) {
                 ArrowStreamWriter streamWriter = new ArrowStreamWriter(schema, null, Channels.newChannel(output), IpcOption.DEFAULT, compressionFactory, codecType);
                 try (PageWriter arrowPageWriter = new PageWriter(streamWriter, schema, columns)) {
@@ -97,10 +99,7 @@ public class ArrowQueryDataEncoder
             }
         }
         finally {
-            // Release semaphore immediately after Arrow unsafe buffers are freed
-            if (semaphore.isPresent()) {
-                releaseArrowSemaphore(semaphore.get());
-            }
+            semaphore.ifPresent(Semaphore::release);
         }
     }
 
@@ -118,41 +117,6 @@ public class ArrowQueryDataEncoder
     public void close()
     {
         allocator.close();
-    }
-
-    private void acquireArrowSemaphore(Semaphore semaphore)
-    {
-        long threadId = Thread.currentThread().getId();
-        // Log detailed semaphore state before acquiring
-        int availablePermits = semaphore.availablePermits();
-        int queueLength = semaphore.getQueueLength();
-        boolean hasQueuedThreads = semaphore.hasQueuedThreads();
-        log.debug("Thread %d - Arrow semaphore state before acquire - Available permits: %d, Queue length: %d, Has queued threads: %s",
-                threadId, availablePermits, queueLength, hasQueuedThreads);
-        // Warn if there's Arrow serialization backpressure
-        if (queueLength > 0) {
-            log.warn("Thread %d - Arrow serialization backpressure detected with %d threads waiting. " +
-                    "Consider increasing 'protocol.spooling.arrow.max-concurrent-serialization' (current: %d available permits)",
-                    threadId, queueLength, availablePermits);
-        }
-
-        semaphore.acquireUninterruptibly();
-        // Log state after successful acquisition
-        log.debug("Thread %d - Arrow semaphore acquired successfully - Available permits now: %d, Queue length: %d",
-                threadId, semaphore.availablePermits(), semaphore.getQueueLength());
-    }
-
-    private void releaseArrowSemaphore(Semaphore semaphore)
-    {
-        long threadId = Thread.currentThread().getId();
-        // Log state before release
-        log.debug("Thread %d - Releasing Arrow semaphore - Available permits before release: %d, Queue length: %d",
-                threadId, semaphore.availablePermits(), semaphore.getQueueLength());
-
-        semaphore.release();
-        // Log state after release
-        log.debug("Thread %d - Arrow semaphore released - Available permits after release: %d, Queue length: %d, Has queued threads: %s",
-                threadId, semaphore.availablePermits(), semaphore.getQueueLength(), semaphore.hasQueuedThreads());
     }
 
     public static class Factory

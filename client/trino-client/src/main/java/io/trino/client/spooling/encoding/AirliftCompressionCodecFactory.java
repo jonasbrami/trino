@@ -27,15 +27,16 @@ public class AirliftCompressionCodecFactory
         if (requireNonNull(codecType) == CompressionUtil.CodecType.ZSTD) {
             return new AirliftZstdCompressionCodec();
         }
-        throw new IllegalStateException("Unsupported codec type: " + codecType);
+        throw new IllegalArgumentException("Unsupported codec type: " + codecType);
     }
 
     @Override
     public CompressionCodec createCodec(CompressionUtil.CodecType codecType, int compressionLevel)
     {
+        // compressionLevel is ignored -- Airlift Zstd uses its default level
         if (requireNonNull(codecType) == CompressionUtil.CodecType.ZSTD) {
             return new AirliftZstdCompressionCodec();
         }
-        throw new IllegalStateException("Unsupported codec type: " + codecType);
+        throw new IllegalArgumentException("Unsupported codec type: " + codecType);
     }
 }

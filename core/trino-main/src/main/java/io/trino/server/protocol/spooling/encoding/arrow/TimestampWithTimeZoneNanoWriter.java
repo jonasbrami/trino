@@ -19,6 +19,7 @@ import io.trino.spi.type.TimestampWithTimeZoneType;
 import org.apache.arrow.vector.TimeStampNanoTZVector;
 
 import static io.trino.spi.type.DateTimeEncoding.unpackMillisUtc;
+import static java.lang.Math.multiplyExact;
 
 public final class TimestampWithTimeZoneNanoWriter
         extends FixedWidthWriter<TimeStampNanoTZVector>
@@ -54,6 +55,13 @@ public final class TimestampWithTimeZoneNanoWriter
             picosOfMilli = timestamp.getPicosOfMilli();
         }
 
-        vector.set(position, epochMillis * 1_000_000 + (picosOfMilli / 1_000));
+        try {
+            long epochNanos = multiplyExact(epochMillis, 1_000_000L) + (picosOfMilli / 1_000);
+            vector.set(position, epochNanos);
+        }
+        catch (ArithmeticException e) {
+            // Handle overflow by saturating to max/min values
+            vector.set(position, epochMillis > 0 ? Long.MAX_VALUE : Long.MIN_VALUE);
+        }
     }
 }

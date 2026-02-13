@@ -47,6 +47,7 @@ import org.apache.arrow.vector.util.TransferPair;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,6 +62,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Verify.verify;
@@ -93,13 +95,9 @@ import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Objects.requireNonNull;
-import static java.util.UUID.nameUUIDFromBytes;
 
 public class ArrowDecodingUtils
 {
-    // TODO: remove me once I'm not longer needed
-    private static final boolean DEBUG = false;
-
     private ArrowDecodingUtils()
     {
     }
@@ -479,8 +477,10 @@ public class ArrowDecodingUtils
                 return null;
             }
 
-            // TODO: expect UUID directly in the JDBC driver
-            return nameUUIDFromBytes(vector.get(position)).toString();
+            // Reconstruct UUID from big-endian byte representation
+            byte[] bytes = vector.get(position);
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            return new UUID(buffer.getLong(), buffer.getLong()).toString();
         }
 
         @Override
@@ -804,29 +804,6 @@ public class ArrowDecodingUtils
             extends Closeable
     {
         Object decode(int position);
-    }
-
-    private static VectorTypeDecoder debugging(VectorTypeDecoder delegate)
-    {
-        if (!DEBUG) {
-            return delegate;
-        }
-        return new VectorTypeDecoder() {
-            @Override
-            public Object decode(int position)
-            {
-                Object object = delegate.decode(position);
-                System.out.println(delegate.getClass().getSimpleName() + "[" + position + "] = " + object);
-                return object;
-            }
-
-            @Override
-            public void close()
-                    throws IOException
-            {
-                delegate.close();
-            }
-        };
     }
 
     private static <T extends FieldVector> T checkedCast(ValueVector vector, Class<T> clazz)
