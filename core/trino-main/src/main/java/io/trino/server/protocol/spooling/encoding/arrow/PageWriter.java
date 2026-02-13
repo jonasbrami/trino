@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.util.List;
 
 import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
-import static java.lang.Math.toIntExact;
 import static java.util.Objects.requireNonNull;
 
 public class PageWriter
@@ -40,7 +39,7 @@ public class PageWriter
         this.columns = ImmutableList.copyOf(requireNonNull(columns, "columns is null"));
     }
 
-    public int writePages(List<Page> pages)
+    public long writePages(List<Page> pages)
             throws IOException
     {
         for (Page page : pages) {
@@ -52,7 +51,7 @@ public class PageWriter
             }
             streamWriter.writeBatch();
         }
-        return toIntExact(streamWriter.bytesWritten());
+        return streamWriter.bytesWritten();
     }
 
     @Override

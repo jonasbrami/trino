@@ -39,21 +39,25 @@ public class AirliftZstdCompressionCodec
     {
         int decompressedLength = toIntExact(readUncompressedLength(compressedBuffer));
         ArrowBuf uncompressedBuffer = allocator.buffer(decompressedLength);
+        try {
+            ByteBuffer inputBuffer = compressedBuffer.nioBuffer(SIZE_OF_UNCOMPRESSED_LENGTH, toIntExact(compressedBuffer.writerIndex() - SIZE_OF_UNCOMPRESSED_LENGTH));
+            ByteBuffer outputBuffer = uncompressedBuffer.nioBuffer(0, decompressedLength);
 
-        ByteBuffer inputBuffer = compressedBuffer.nioBuffer(SIZE_OF_UNCOMPRESSED_LENGTH, toIntExact(compressedBuffer.writerIndex() - SIZE_OF_UNCOMPRESSED_LENGTH));
-        ByteBuffer outputBuffer = uncompressedBuffer.nioBuffer(0, decompressedLength);
+            long uncompressedSize = decompressZstd(inputBuffer, outputBuffer);
 
-        long uncompressedSize = decompressZstd(inputBuffer, outputBuffer);
-
-        if (uncompressedSize != decompressedLength) {
-            uncompressedBuffer.close();
-            throw new RuntimeException(
-                    "Expected != actual decompressed length: "
-                            + decompressedLength
-                            + " != "
-                            + uncompressedSize);
+            if (uncompressedSize != decompressedLength) {
+                throw new RuntimeException(
+                        "Expected != actual decompressed length: "
+                                + decompressedLength
+                                + " != "
+                                + uncompressedSize);
+            }
+            return uncompressedBuffer;
         }
-        return uncompressedBuffer;
+        catch (Throwable t) {
+            uncompressedBuffer.close();
+            throw t;
+        }
     }
 
     @Override

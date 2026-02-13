@@ -52,9 +52,8 @@ public final class RowWriter
         }
 
         // Set the validity buffer for the struct vector
-        RowBlock rowBlock = (RowBlock) block;
         for (int position = 0; position < block.getPositionCount(); position++) {
-            if (!rowBlock.isNull(position)) {
+            if (!block.isNull(position)) {
                 vector.setIndexDefined(position);
             }
         }

@@ -52,7 +52,7 @@ public class ArrowQueryDataDecoder
     public CloseableIterator<List<Object>> decode(InputStream input, DataAttributes segmentAttributes)
             throws IOException
     {
-        BufferAllocator allocator = ROOT_ALLOCATOR.newChildAllocator(randomUUID().toString(), Integer.MAX_VALUE, Integer.MAX_VALUE);
+        BufferAllocator allocator = ROOT_ALLOCATOR.newChildAllocator(randomUUID().toString(), 0, Integer.MAX_VALUE);
         ArrowStreamReader streamReader = new ArrowStreamReader(input, allocator, new AirliftCompressionCodecFactory());
         return new ArrowRowIterator(allocator, streamReader, columns);
     }
