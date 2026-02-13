@@ -33,6 +33,7 @@ public class ArrowCompressionFactory
     @Override
     public CompressionCodec createCodec(CompressionUtil.CodecType codecType, int compressionLevel)
     {
+        // compressionLevel is ignored -- Airlift Zstd uses its default level
         if (requireNonNull(codecType) == CompressionUtil.CodecType.ZSTD) {
             return new ZstdCompressionCodec();
         }

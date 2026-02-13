@@ -13,11 +13,12 @@
  */
 package io.trino.server.protocol.spooling.encoding.arrow;
 
-import io.trino.spi.block.ArrayBlock;
 import io.trino.spi.block.Block;
+import io.trino.spi.block.ColumnarArray;
 import io.trino.spi.type.ArrayType;
 import org.apache.arrow.vector.complex.ListVector;
 
+import static io.trino.spi.block.ColumnarArray.toColumnarArray;
 import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
 import static java.util.Objects.requireNonNull;
 
@@ -36,26 +37,21 @@ public final class ArrayWriter
     @Override
     public void write(Block block)
     {
-        vector.setInitialCapacity(block.getPositionCount());
+        ColumnarArray columnarArray = toColumnarArray(block);
+        vector.setInitialCapacity(columnarArray.getPositionCount());
         vector.allocateNew();
 
-        if (block instanceof ArrayBlock arrayBlock) {
-            Block dataBlock = arrayBlock.getElementsBlock();
-            ArrowWriter elementWriter = writerForVector(vector.getDataVector(), type.getElementType());
-            for (int position = 0; position < block.getPositionCount(); position++) {
-                if (block.isNull(position)) {
-                    vector.setNull(position);
-                    continue;
-                }
-                Block elementBlock = arrayBlock.getArray(position);
-                vector.startNewValue(position);
-                vector.endValue(position, elementBlock.getPositionCount());
+        for (int position = 0; position < columnarArray.getPositionCount(); position++) {
+            if (columnarArray.isNull(position)) {
+                vector.setNull(position);
+                continue;
             }
-            elementWriter.write(dataBlock);
-            vector.setValueCount(block.getPositionCount());
+            vector.startNewValue(position);
+            vector.endValue(position, columnarArray.getLength(position));
         }
-        else {
-            throw new UnsupportedOperationException("ArrayBlock is expected but got " + block.getClass().getSimpleName());
-        }
+
+        ArrowWriter elementWriter = writerForVector(vector.getDataVector(), type.getElementType());
+        elementWriter.write(columnarArray.getElementsBlock());
+        vector.setValueCount(columnarArray.getPositionCount());
     }
 }
