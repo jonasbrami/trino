@@ -76,6 +76,15 @@ public class TestArrowSpooledDistributedQueries
                 .hasMessageContaining("2012-10-30T11:00Z");
     }
 
+    @Test
+    @Override
+    public void testNumber()
+    {
+        // NUMBER type is not supported by Arrow spooling encoding
+        assertThatThrownBy(super::testNumber)
+                .hasMessageContaining("not supported for spooling encoding 'arrow+zstd'");
+    }
+
     @Override
     protected String encoding()
     {
