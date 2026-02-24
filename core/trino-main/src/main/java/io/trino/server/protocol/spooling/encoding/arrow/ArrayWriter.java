@@ -18,8 +18,8 @@ import io.trino.spi.block.ColumnarArray;
 import io.trino.spi.type.ArrayType;
 import org.apache.arrow.vector.complex.ListVector;
 
-import static io.trino.spi.block.ColumnarArray.toColumnarArray;
 import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
+import static io.trino.spi.block.ColumnarArray.toColumnarArray;
 import static java.util.Objects.requireNonNull;
 
 public final class ArrayWriter
