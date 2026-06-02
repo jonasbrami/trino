@@ -85,6 +85,16 @@ public class TestArrowSpooledDistributedQueries
                 .hasMessageContaining("not supported for spooling encoding 'arrow+zstd'");
     }
 
+    @Test
+    @Override
+    public void testCoercions()
+    {
+        // testCoercions includes a CAST(... AS NUMBER) output column, and the NUMBER type is not
+        // supported by Arrow spooling encoding (see testNumber)
+        assertThatThrownBy(super::testCoercions)
+                .hasMessageContaining("not supported for spooling encoding 'arrow+zstd'");
+    }
+
     @Override
     protected String encoding()
     {
