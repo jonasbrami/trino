@@ -124,7 +124,7 @@ public class TestArrowEncodingUtils
 
     protected QueryDataDecoder createDecoder(List<Column> columns)
     {
-        return new ArrowQueryDataDecoder.Factory().create(columns, DataAttributes.empty());
+        return new ArrowQueryDataDecoder.Factory().create(columns, DataAttributes.empty(), false);
     }
 
     protected QueryDataEncoder createEncoder(List<OutputColumn> columns)
@@ -1267,7 +1267,7 @@ public class TestArrowEncodingUtils
     {
         ImmutableList.Builder<Column> columns = ImmutableList.builderWithExpectedSize(types.size());
         for (TypedColumn typedColumn : types) {
-            columns.add(createColumn(typedColumn.name(), typedColumn.type(), true, true));
+            columns.add(createColumn(typedColumn.name(), typedColumn.type(), true, true, false, false));
         }
         return createDecoder(columns.build());
     }
