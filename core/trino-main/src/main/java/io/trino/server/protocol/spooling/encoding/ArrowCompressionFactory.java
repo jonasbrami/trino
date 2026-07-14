@@ -33,10 +33,8 @@ public class ArrowCompressionFactory
     @Override
     public CompressionCodec createCodec(CompressionUtil.CodecType codecType, int compressionLevel)
     {
-        // compressionLevel is ignored -- Airlift Zstd uses its default level
-        if (requireNonNull(codecType) == CompressionUtil.CodecType.ZSTD) {
-            return new ZstdCompressionCodec();
-        }
-        throw new IllegalArgumentException("Compression type not supported: " + codecType);
+        // Trino spooling does not expose a configurable compression level, so it is ignored;
+        // like the json+zstd encoding, Arrow data is compressed at zstd's default level.
+        return createCodec(codecType);
     }
 }

@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 
 import static io.trino.client.spooling.encoding.DecompressionUtils.decompressZstd;
 import static java.lang.Math.toIntExact;
+import static java.lang.String.format;
 import static org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
 import static org.apache.arrow.vector.compression.CompressionUtil.SIZE_OF_UNCOMPRESSED_LENGTH;
 
@@ -37,7 +38,11 @@ public class AirliftZstdCompressionCodec
     @Override
     protected ArrowBuf doDecompress(BufferAllocator allocator, ArrowBuf compressedBuffer)
     {
-        int decompressedLength = toIntExact(readUncompressedLength(compressedBuffer));
+        long uncompressedLength = readUncompressedLength(compressedBuffer);
+        if (uncompressedLength <= 0 || uncompressedLength > Integer.MAX_VALUE) {
+            throw new IllegalStateException(format("Unsupported or missing uncompressed length in zstd frame: %d", uncompressedLength));
+        }
+        int decompressedLength = toIntExact(uncompressedLength);
         ArrowBuf uncompressedBuffer = allocator.buffer(decompressedLength);
         try {
             ByteBuffer inputBuffer = compressedBuffer.nioBuffer(SIZE_OF_UNCOMPRESSED_LENGTH, toIntExact(compressedBuffer.writerIndex() - SIZE_OF_UNCOMPRESSED_LENGTH));
@@ -46,11 +51,7 @@ public class AirliftZstdCompressionCodec
             long uncompressedSize = decompressZstd(inputBuffer, outputBuffer);
 
             if (uncompressedSize != decompressedLength) {
-                throw new RuntimeException(
-                        "Expected != actual decompressed length: "
-                                + decompressedLength
-                                + " != "
-                                + uncompressedSize);
+                throw new IllegalStateException(format("zstd decompressed size mismatch: expected=%d actual=%d", decompressedLength, uncompressedSize));
             }
             return uncompressedBuffer;
         }
