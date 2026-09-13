@@ -18,7 +18,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Closer;
 import io.airlift.slice.Slices;
 import io.trino.plugin.iceberg.IcebergUtil;
-import io.trino.plugin.iceberg.StructLikeWrapperWithFieldIdToIndex;
 import io.trino.plugin.iceberg.system.EntriesTable;
 import io.trino.plugin.iceberg.system.IcebergPartitionColumn;
 import io.trino.spi.Page;
@@ -66,7 +65,6 @@ import static com.google.common.collect.Streams.mapWithIndex;
 import static io.trino.plugin.iceberg.IcebergTypes.convertIcebergValueToTrino;
 import static io.trino.plugin.iceberg.IcebergUtil.primitiveFieldTypes;
 import static io.trino.plugin.iceberg.IcebergUtil.readerForManifest;
-import static io.trino.plugin.iceberg.StructLikeWrapperWithFieldIdToIndex.createStructLikeWrapper;
 import static io.trino.plugin.iceberg.system.EntriesTable.DATA_FILE_COLUMN_NAME;
 import static io.trino.plugin.iceberg.system.EntriesTable.FILE_SEQUENCE_NUMBER_COLUMN_NAME;
 import static io.trino.plugin.iceberg.system.EntriesTable.READABLE_METRICS_COLUMN_NAME;
@@ -99,7 +97,7 @@ public final class EntriesTablePageSource
     private final Schema schema;
     private final Schema metadataSchema;
     private final Map<Integer, PrimitiveType> idToTypeMapping;
-    private final Map<Integer, PartitionSpec> idToPartitionSpecMapping;
+    private final Map<Integer, Map<Integer, Integer>> partitionFieldPositionsBySpecId;
     private final Optional<IcebergPartitionColumn> partitionColumn;
     private final List<Type> partitionTrinoTypes;
     private final List<org.apache.iceberg.types.Type> partitionIcebergTypes;
@@ -123,9 +121,10 @@ public final class EntriesTablePageSource
         try {
             this.schema = SchemaParser.fromJson(requireNonNull(split.schemaJson(), "schemaJson is null"));
             this.metadataSchema = SchemaParser.fromJson(requireNonNull(split.metadataSchemaJson(), "metadataSchemaJson is null"));
-            this.idToPartitionSpecMapping = split.partitionSpecsByIdJson().entrySet().stream().collect(toImmutableMap(
+            Map<Integer, PartitionSpec> idToPartitionSpecMapping = split.partitionSpecsByIdJson().entrySet().stream().collect(toImmutableMap(
                     Map.Entry::getKey,
                     entry -> PartitionSpecParser.fromJson(schema, entry.getValue())));
+            this.partitionFieldPositionsBySpecId = partitionFieldPositionsBySpecId(idToPartitionSpecMapping.values());
             // Row id and last updated sequence number may be written to a v3 file, so include their types for bounds conversion.
             this.idToTypeMapping = ImmutableMap.<Integer, PrimitiveType>builder()
                     .putAll(primitiveFieldTypes(schema))
@@ -159,6 +158,20 @@ public final class EntriesTablePageSource
             closeOnFailure(e);
             throw e;
         }
+    }
+
+    private static Map<Integer, Map<Integer, Integer>> partitionFieldPositionsBySpecId(Iterable<PartitionSpec> specs)
+    {
+        ImmutableMap.Builder<Integer, Map<Integer, Integer>> partitionFieldPositions = ImmutableMap.builder();
+        for (PartitionSpec spec : specs) {
+            ImmutableMap.Builder<Integer, Integer> positions = ImmutableMap.builder();
+            List<NestedField> fields = spec.partitionType().fields();
+            for (int i = 0; i < fields.size(); i++) {
+                positions.put(fields.get(i).fieldId(), i);
+            }
+            partitionFieldPositions.put(spec.specId(), positions.buildOrThrow());
+        }
+        return partitionFieldPositions.buildOrThrow();
     }
 
     private Type columnType(String columnName)
@@ -342,18 +355,17 @@ public final class EntriesTablePageSource
     private void appendPartition(RowBlockBuilder partitionBlockBuilder, ContentFile<?> contentFile)
     {
         IcebergPartitionColumn column = partitionColumn.orElseThrow();
-        PartitionSpec partitionSpec = idToPartitionSpecMapping.get(contentFile.specId());
-        StructLikeWrapperWithFieldIdToIndex partitionStruct = createStructLikeWrapper(partitionSpec, contentFile.partition());
+        Map<Integer, Integer> positions = partitionFieldPositionsBySpecId.get(contentFile.specId());
         partitionBlockBuilder.buildEntry(fields -> {
             for (int i = 0; i < partitionTrinoTypes.size(); i++) {
                 Type trinoType = partitionTrinoTypes.get(i);
                 Object value = null;
-                Integer fieldId = column.fieldIds().get(i);
-                if (partitionStruct.getFieldIdToIndex().containsKey(fieldId)) {
+                Integer position = positions.get(column.fieldIds().get(i));
+                if (position != null) {
                     org.apache.iceberg.types.Type icebergType = partitionIcebergTypes.get(i);
                     value = convertIcebergValueToTrino(
                             icebergType,
-                            partitionStruct.getStructLikeWrapper().get().get(partitionStruct.getFieldIdToIndex().get(fieldId), icebergType.typeId().javaClass()));
+                            contentFile.partition().get(position, icebergType.typeId().javaClass()));
                 }
                 writeNativeValue(trinoType, fields.get(i), value);
             }
