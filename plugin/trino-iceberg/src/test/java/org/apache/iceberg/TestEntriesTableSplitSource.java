@@ -66,7 +66,6 @@ class TestEntriesTableSplitSource
             assertThat(source.getNextBatch(1, FILTER).join()).isEmpty();
             assertThat(source.isFinished()).isTrue();
         }
-        assertThat(fileIO.closes).isEqualTo(1);
         for (Snapshot snapshot : table.snapshots()) {
             snapshot.allManifests(fileIO);
         }
@@ -92,7 +91,6 @@ class TestEntriesTableSplitSource
         assertThat(source.isFinished()).isTrue();
         assertThat(source.getNextBatch(1, FILTER).join()).isEmpty();
         assertThat(fileIO.reads).isEqualTo(start ? 1 : 0);
-        assertThat(fileIO.closes).isEqualTo(1);
     }
 
     @Test
@@ -105,12 +103,10 @@ class TestEntriesTableSplitSource
         fileIO.fail = true;
         assertThatThrownBy(() -> source.getNextBatch(1, FILTER))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("read failed")
-                .hasSuppressedException(new IllegalStateException("close failed"));
+                .hasMessage("read failed");
         source.close();
         assertThat(source.isFinished()).isTrue();
         assertThat(source.getNextBatch(1, FILTER).join()).isEmpty();
-        assertThat(fileIO.closes).isEqualTo(1);
     }
 
     @Test
@@ -146,7 +142,6 @@ class TestEntriesTableSplitSource
                     .hasMessage("Unexpected column: invalid");
             assertThat(fileIO.closes).isEqualTo(2);
         }
-        assertThat(fileIO.closes).isEqualTo(3);
     }
 
     private static String path(ConnectorSplit split)
@@ -232,9 +227,6 @@ class TestEntriesTableSplitSource
         public void close()
         {
             closes++;
-            if (fail) {
-                throw new IllegalStateException("close failed");
-            }
         }
     }
 }

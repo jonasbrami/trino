@@ -54,7 +54,7 @@ public final class EntriesTableSplitSource
     private final Set<String> seenManifestPaths = new HashSet<>();
     private Iterator<Snapshot> snapshots;
     private Iterator<ManifestFile> manifests = emptyIterator();
-    private boolean closed;
+    private volatile boolean closed;
 
     public EntriesTableSplitSource(
             Table icebergTable,
@@ -85,7 +85,7 @@ public final class EntriesTableSplitSource
 
         try {
             List<ConnectorSplit> splits = new ArrayList<>();
-            while (splits.size() < maxSize) {
+            while (!closed && splits.size() < maxSize) {
                 if (!manifests.hasNext()) {
                     manifests = emptyIterator();
                     if (!snapshots.hasNext()) {
@@ -108,12 +108,7 @@ public final class EntriesTableSplitSource
             return completedFuture(splits);
         }
         catch (RuntimeException | Error e) {
-            try {
-                close();
-            }
-            catch (RuntimeException | Error closeFailure) {
-                e.addSuppressed(closeFailure);
-            }
+            close();
             throw e;
         }
     }
@@ -127,13 +122,6 @@ public final class EntriesTableSplitSource
     @Override
     public void close()
     {
-        if (closed) {
-            return;
-        }
         closed = true;
-        manifests = emptyIterator();
-        snapshots = emptyIterator();
-        seenManifestPaths.clear();
-        fileIO.close();
     }
 }

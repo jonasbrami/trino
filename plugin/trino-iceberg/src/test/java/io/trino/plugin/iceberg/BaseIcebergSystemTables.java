@@ -1009,6 +1009,18 @@ public abstract class BaseIcebergSystemTables
     }
 
     @Test
+    void testEntriesAfterDropColumn()
+    {
+        try (TestTable table = newTrinoTable("test_entries_drop_column", "AS SELECT BIGINT '1' id, BIGINT '2' dropped")) {
+            assertUpdate("ALTER TABLE " + table.getName() + " DROP COLUMN dropped");
+            for (String suffix : List.of("entries", "all_entries")) {
+                assertThat(query("SELECT data_file.lower_bounds, data_file.upper_bounds FROM \"%s$%s\"".formatted(table.getName(), suffix)))
+                        .matches("VALUES (MAP(ARRAY[1, 2], ARRAY[VARCHAR '1', NULL]), MAP(ARRAY[1, 2], ARRAY[VARCHAR '1', NULL]))");
+            }
+        }
+    }
+
+    @Test
     void testEntriesAfterEqualityDelete()
             throws Exception
     {

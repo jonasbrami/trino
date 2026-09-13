@@ -412,7 +412,12 @@ public final class EntriesTablePageSource
         blockBuilder.buildEntry((keyBuilder, valueBuilder) -> values.forEach((key, value) -> {
             org.apache.iceberg.types.Type type = idToTypeMapping.get(key);
             INTEGER.writeLong(keyBuilder, key);
-            VARCHAR.writeString(valueBuilder, Transforms.identity().toHumanString(type, Conversions.fromByteBuffer(type, value)));
+            if (type == null) {
+                valueBuilder.appendNull();
+            }
+            else {
+                VARCHAR.writeString(valueBuilder, Transforms.identity().toHumanString(type, Conversions.fromByteBuffer(type, value)));
+            }
         }));
     }
 
