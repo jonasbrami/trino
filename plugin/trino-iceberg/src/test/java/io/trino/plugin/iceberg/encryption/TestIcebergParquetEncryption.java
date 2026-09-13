@@ -120,7 +120,7 @@ final class TestIcebergParquetEncryption
                     .containsExactlyInAnyOrderElementsOf(computeActual("SELECT * FROM \"" + tableName + "$entries\"").getMaterializedRows());
         }
         finally {
-            assertUpdate("DROP TABLE " + tableName);
+            getQueryRunner().execute("DROP TABLE IF EXISTS " + tableName);
         }
     }
 

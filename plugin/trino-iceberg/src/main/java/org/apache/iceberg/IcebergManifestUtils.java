@@ -35,8 +35,7 @@ public class IcebergManifestUtils
         if (snapshot.manifestListLocation() == null) {
             return snapshot.allManifests(fileIO);
         }
-        // Read directly: snapshot.allManifests(fileIO) caches manifest descriptors in each snapshot,
-        // retaining duplicate descriptors for manifests shared across snapshot history.
+        // TODO: Consolidate with the other read method, preserving cache avoidance and manifest-list encryption.
         return ManifestLists.read(fileIO.newInputFile(new BaseManifestListFile(snapshot.manifestListLocation(), snapshot.keyId())));
     }
 
@@ -61,7 +60,7 @@ public class IcebergManifestUtils
                 entry.fileSequenceNumber()));
     }
 
-    public record ManifestEntryWithMetadata(ContentFile<?> file, int status, Long snapshotId, Long sequenceNumber, Long fileSequenceNumber) {}
+    public record ManifestEntryWithMetadata(ContentFile<?> file, int status, long snapshotId, Long sequenceNumber, Long fileSequenceNumber) {}
 
     public record FileEntryWithMetadata(ContentFile<?> file, long snapshotId) {}
 }

@@ -32,6 +32,7 @@ import io.trino.spi.type.RowType;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeDescriptor;
 import io.trino.spi.type.TypeManager;
+import jakarta.annotation.Nullable;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileContent;
 import org.apache.iceberg.IcebergManifestUtils.ManifestEntryWithMetadata;
@@ -246,7 +247,7 @@ public final class EntriesTablePageSource
         }
     }
 
-    private void writeInteger(String columnName, Integer value)
+    private void writeInteger(String columnName, @Nullable Integer value)
     {
         Integer channel = columnNameToIndex.get(columnName);
         if (channel == null) {
@@ -261,7 +262,7 @@ public final class EntriesTablePageSource
         }
     }
 
-    private void writeBigint(String columnName, Long value)
+    private void writeBigint(String columnName, @Nullable Long value)
     {
         Integer channel = columnNameToIndex.get(columnName);
         if (channel == null) {
@@ -403,7 +404,7 @@ public final class EntriesTablePageSource
         }
     }
 
-    private static void appendIntegerBigintMap(MapBlockBuilder blockBuilder, Map<Integer, Long> values)
+    private static void appendIntegerBigintMap(MapBlockBuilder blockBuilder, @Nullable Map<Integer, Long> values)
     {
         if (values == null) {
             blockBuilder.appendNull();
@@ -415,7 +416,7 @@ public final class EntriesTablePageSource
         }));
     }
 
-    private void appendIntegerVarcharMap(MapBlockBuilder blockBuilder, Map<Integer, ByteBuffer> values)
+    private void appendIntegerVarcharMap(MapBlockBuilder blockBuilder, @Nullable Map<Integer, ByteBuffer> values)
     {
         if (values == null) {
             blockBuilder.appendNull();
@@ -433,7 +434,7 @@ public final class EntriesTablePageSource
         }));
     }
 
-    private static void appendBoundsForPositionDelete(MapBlockBuilder blockBuilder, Map<Integer, ByteBuffer> values)
+    private static void appendBoundsForPositionDelete(MapBlockBuilder blockBuilder, @Nullable Map<Integer, ByteBuffer> values)
     {
         if (values == null) {
             blockBuilder.appendNull();
@@ -453,7 +454,7 @@ public final class EntriesTablePageSource
         });
     }
 
-    private static void appendBigintArray(ArrayBlockBuilder blockBuilder, List<Long> values)
+    private static void appendBigintArray(ArrayBlockBuilder blockBuilder, @Nullable List<Long> values)
     {
         if (values == null) {
             blockBuilder.appendNull();
@@ -462,7 +463,7 @@ public final class EntriesTablePageSource
         blockBuilder.buildEntry(elementBuilder -> values.forEach(value -> BIGINT.writeLong(elementBuilder, value)));
     }
 
-    private static void appendIntegerArray(ArrayBlockBuilder blockBuilder, List<Integer> values)
+    private static void appendIntegerArray(ArrayBlockBuilder blockBuilder, @Nullable List<Integer> values)
     {
         if (values == null) {
             blockBuilder.appendNull();
