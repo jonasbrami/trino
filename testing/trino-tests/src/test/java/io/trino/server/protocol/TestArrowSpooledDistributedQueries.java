@@ -82,7 +82,7 @@ public class TestArrowSpooledDistributedQueries
     {
         // NUMBER type is not supported by Arrow spooling encoding
         assertThatThrownBy(super::testNumber)
-                .hasMessageContaining("not supported for spooling encoding 'arrow+zstd'");
+                .hasMessageContaining("not supported for spooling encoding '%s'".formatted(encoding()));
     }
 
     @Test
@@ -92,7 +92,7 @@ public class TestArrowSpooledDistributedQueries
         // testCoercions includes a CAST(... AS NUMBER) output column, and the NUMBER type is not
         // supported by Arrow spooling encoding (see testNumber)
         assertThatThrownBy(super::testCoercions)
-                .hasMessageContaining("not supported for spooling encoding 'arrow+zstd'");
+                .hasMessageContaining("not supported for spooling encoding '%s'".formatted(encoding()));
     }
 
     @Override
