@@ -26,6 +26,7 @@ public final class MapWriter
         implements ArrowWriter
 {
     private final MapVector vector;
+    private final StructVector entriesVector;
     private final ArrowWriter keyWriter;
     private final ArrowWriter valueWriter;
 
@@ -33,6 +34,7 @@ public final class MapWriter
     {
         this.vector = requireNonNull(vector, "vector is null");
         if (vector.getDataVector() instanceof StructVector structVector) {
+            this.entriesVector = structVector;
             this.keyWriter = writerForVector(structVector.getChild("key"), type.getKeyType());
             this.valueWriter = writerForVector(structVector.getChild("value"), type.getValueType());
         }
@@ -47,7 +49,8 @@ public final class MapWriter
         ColumnarMap mapBlock = ColumnarMap.toColumnarMap(block);
         Block keyBlock = mapBlock.getKeysBlock();
         Block valueBlock = mapBlock.getValuesBlock();
-        vector.setInitialTotalCapacity(mapBlock.getPositionCount(), mapBlock.getValuesBlock().getPositionCount());
+        int entryCount = keyBlock.getPositionCount();
+        vector.setInitialTotalCapacity(mapBlock.getPositionCount(), entryCount);
         vector.allocateNew();
         for (int position = 0; position < block.getPositionCount(); position++) {
             if (block.isNull(position)) {
@@ -61,6 +64,10 @@ public final class MapWriter
         }
         keyWriter.write(keyBlock);
         valueWriter.write(valueBlock);
+        // Only a map itself can be null, never its entries
+        for (int entry = 0; entry < entryCount; entry++) {
+            entriesVector.setIndexDefined(entry);
+        }
         vector.setValueCount(block.getPositionCount());
     }
 }

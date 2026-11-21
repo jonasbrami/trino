@@ -48,6 +48,8 @@ import io.trino.type.IntervalYearMonthType;
 import io.trino.type.JsonType;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.complex.MapVector;
+import org.apache.arrow.vector.complex.StructVector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,7 +61,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -78,6 +82,8 @@ import static io.trino.block.BlockAssertions.createTinyintsBlock;
 import static io.trino.block.BlockAssertions.createTypedLongsBlock;
 import static io.trino.client.spooling.DataAttribute.SEGMENT_SIZE;
 import static io.trino.server.protocol.ProtocolUtil.createColumn;
+import static io.trino.server.protocol.spooling.encoding.arrow.TrinoToArrowTypeConverter.toArrowField;
+import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.CharType.createCharType;
@@ -1010,6 +1016,57 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(1);
+    }
+
+    @Test
+    public void testMapEntriesAreNotNull()
+            throws IOException
+    {
+        MapType mapType = new MapType(VARCHAR, BIGINT, new TypeOperators());
+        MapBlockBuilder blockBuilder = mapType.createBlockBuilder(null, 4);
+        blockBuilder.buildEntry((keyBuilder, valueBuilder) -> {
+            VARCHAR.writeSlice(keyBuilder, utf8Slice("a"));
+            BIGINT.writeLong(valueBuilder, 1L);
+            VARCHAR.writeSlice(keyBuilder, utf8Slice("b"));
+            valueBuilder.appendNull();
+        });
+        blockBuilder.appendNull();
+        blockBuilder.buildEntry((_, _) -> {});
+        blockBuilder.buildEntry((keyBuilder, valueBuilder) -> {
+            VARCHAR.writeSlice(keyBuilder, utf8Slice("c"));
+            BIGINT.writeLong(valueBuilder, 3L);
+        });
+        Block block = blockBuilder.build();
+
+        // Arrow readers like pyarrow reject maps with null entries, only the map itself or its values can be null
+        assertMapEntries(mapType, block, 1, 3);
+        assertMapEntries(mapType, DictionaryBlock.create(4, block, new int[] {3, 1, 0, 0}), 1, 5);
+
+        Map<Object, Object> firstMap = new HashMap<>();
+        firstMap.put("a", 1L);
+        firstMap.put("b", null);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", mapType));
+        assertThat(roundTrip(columns, page(block)))
+                .containsExactly(
+                        List.of(firstMap),
+                        Arrays.asList((Object) null),
+                        List.of(Map.of()),
+                        List.of(Map.of("c", 3L)))
+                .isEqualTo(jsonRoundTrip(columns, page(block)));
+    }
+
+    private void assertMapEntries(MapType mapType, Block block, int expectedNullMaps, int expectedEntries)
+    {
+        try (MapVector vector = (MapVector) toArrowField("col0", mapType, true).createVector(allocator)) {
+            writerForVector(vector, mapType).write(block);
+            assertThat(vector.getValueCount()).isEqualTo(block.getPositionCount());
+            assertThat(vector.getNullCount()).isEqualTo(expectedNullMaps);
+
+            StructVector entries = (StructVector) vector.getDataVector();
+            assertThat(entries.getValueCount()).isEqualTo(expectedEntries);
+            assertThat(entries.getNullCount()).isZero();
+            assertThat(entries.getChild("key").getNullCount()).isZero();
+        }
     }
 
     @Test
