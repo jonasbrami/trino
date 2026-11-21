@@ -71,11 +71,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -1678,6 +1680,62 @@ public class TestArrowEncodingUtils
             try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
                 return ImmutableList.copyOf(iterator);
             }
+        }
+        finally {
+            encoder.close();
+        }
+    }
+
+    @Test
+    public void testEmptyBatches()
+            throws IOException
+    {
+        List<OutputColumn> columns = ImmutableList.of(new OutputColumn(0, "col0", BIGINT));
+        Page empty = new Page(0, BIGINT.createBlockBuilder(null, 0).build());
+        Page page = page(createTypedLongsBlock(BIGINT, 1L, 2L));
+
+        QueryDataEncoder encoder = createEncoder(columns);
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            encoder.encodeTo(output, ImmutableList.of(empty, page, empty, empty, page, empty));
+
+            QueryDataDecoder decoder = createDecoder(ImmutableList.of(createColumn("col0", BIGINT, true, true, false, false, true)));
+            try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
+                List<List<Object>> rows = new ArrayList<>();
+                while (iterator.hasNext()) {
+                    rows.add(iterator.next());
+                }
+                assertThat(rows).containsExactly(List.of(1L), List.of(2L), List.of(1L), List.of(2L));
+                assertThatThrownBy(iterator::next).isInstanceOf(NoSuchElementException.class);
+            }
+        }
+        finally {
+            encoder.close();
+        }
+    }
+
+    @Test
+    public void testDecoderCreationFailureReleasesVectors()
+            throws IOException
+    {
+        List<OutputColumn> columns = ImmutableList.of(new OutputColumn(0, "col0", BIGINT), new OutputColumn(1, "col1", VARCHAR));
+        Page page = page(createTypedLongsBlock(BIGINT, 1L, 2L), createStringsBlock("a", "b"));
+
+        QueryDataEncoder encoder = createEncoder(columns);
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            encoder.encodeTo(output, ImmutableList.of(page));
+
+            // The second column does not match the type of its vector, so its decoder cannot be created
+            QueryDataDecoder decoder = createDecoder(ImmutableList.of(
+                    createColumn("col0", BIGINT, true, true, false, false, true),
+                    createColumn("col1", new ArrayType(BIGINT), true, true, false, false, true)));
+            CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null);
+            assertThatThrownBy(iterator::hasNext)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("ListVector");
+            // Fails if the vectors transferred for the decoders were leaked
+            iterator.close();
         }
         finally {
             encoder.close();

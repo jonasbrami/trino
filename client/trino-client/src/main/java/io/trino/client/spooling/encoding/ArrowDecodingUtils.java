@@ -116,14 +116,33 @@ public class ArrowDecodingUtils
     public static VectorTypeDecoder[] createVectorTypeDecoders(List<Column> columns, BufferAllocator allocator, List<FieldVector> vectors)
     {
         verify(!columns.isEmpty(), "Columns must not be empty");
+        verify(columns.size() == vectors.size(), "Expected %s vectors, but got %s", columns.size(), vectors.size());
         VectorTypeDecoder[] decoders = new VectorTypeDecoder[columns.size()];
-        for (int i = 0; i < columns.size(); i++) {
-            TransferPair transferPair = vectors.get(i).getTransferPair(allocator);
-            transferPair.getTo().allocateNew();
-            transferPair.transfer();
-            decoders[i] = createVectorTypeDecoder(columns.get(i).getTypeSignature(), transferPair.getTo());
+        // Decoders only hold the transferred vectors, which are released if any decoder cannot be created
+        List<ValueVector> transferredVectors = new ArrayList<>(columns.size());
+        try {
+            for (int i = 0; i < columns.size(); i++) {
+                TransferPair transferPair = vectors.get(i).getTransferPair(allocator);
+                transferredVectors.add(transferPair.getTo());
+                transferPair.getTo().allocateNew();
+                transferPair.transfer();
+                decoders[i] = createVectorTypeDecoder(columns.get(i).getTypeSignature(), transferPair.getTo());
+            }
+            return decoders;
         }
-        return decoders;
+        catch (Throwable failure) {
+            for (ValueVector vector : transferredVectors) {
+                try {
+                    vector.close();
+                }
+                catch (Throwable e) {
+                    if (e != failure) {
+                        failure.addSuppressed(e);
+                    }
+                }
+            }
+            throw failure;
+        }
     }
 
     private static VectorTypeDecoder createVectorTypeDecoder(ClientTypeSignature signature, ValueVector vector)
