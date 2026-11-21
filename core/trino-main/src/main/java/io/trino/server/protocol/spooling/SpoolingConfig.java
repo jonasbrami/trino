@@ -105,6 +105,7 @@ public class SpoolingConfig
         return this;
     }
 
+    @Min(1)
     public int getMaxConcurrentSegmentSerialization()
     {
         return maxConcurrentSegmentSerialization;

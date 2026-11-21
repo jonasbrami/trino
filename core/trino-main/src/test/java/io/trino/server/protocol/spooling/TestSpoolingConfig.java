@@ -15,6 +15,7 @@ package io.trino.server.protocol.spooling;
 
 import com.google.common.collect.ImmutableMap;
 import io.airlift.units.DataSize;
+import jakarta.validation.constraints.Min;
 import org.junit.jupiter.api.Test;
 
 import java.util.Base64;
@@ -23,6 +24,7 @@ import java.util.Map;
 import static io.airlift.configuration.testing.ConfigAssertions.assertFullMapping;
 import static io.airlift.configuration.testing.ConfigAssertions.assertRecordedDefaults;
 import static io.airlift.configuration.testing.ConfigAssertions.recordDefaults;
+import static io.airlift.testing.ValidationAssertions.assertFailsValidation;
 import static io.airlift.units.DataSize.Unit.KILOBYTE;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static io.trino.server.protocol.spooling.SpoolingConfig.SegmentRetrievalMode.COORDINATOR_STORAGE_REDIRECT;
@@ -75,5 +77,16 @@ class TestSpoolingConfig
                 .setMaxConcurrentSegmentSerialization(10);
 
         assertFullMapping(properties, expected);
+    }
+
+    @Test
+    public void testValidations()
+    {
+        // A semaphore without permits would block Arrow encoding forever
+        assertFailsValidation(
+                new SpoolingConfig().setMaxConcurrentSegmentSerialization(0),
+                "maxConcurrentSegmentSerialization",
+                "must be greater than or equal to 1",
+                Min.class);
     }
 }
