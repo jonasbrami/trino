@@ -13,16 +13,23 @@
  */
 package io.trino.server.protocol.spooling.encoding.arrow;
 
+import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
 import io.trino.spi.type.LongTimestamp;
 import org.apache.arrow.vector.TimeStampNanoVector;
 
+import static io.trino.spi.StandardErrorCode.NUMERIC_VALUE_OUT_OF_RANGE;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_NANOS;
+import static io.trino.spi.type.Timestamps.NANOSECONDS_PER_MICROSECOND;
+import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
+import static java.lang.Math.addExact;
 import static java.lang.Math.multiplyExact;
 
 public final class TimestampNanoWriter
         extends FixedWidthWriter<TimeStampNanoVector>
 {
+    static final String NANOSECOND_RANGE = "1677-09-21 00:12:43.145224192 and 2262-04-11 23:47:16.854775807 UTC";
+
     public TimestampNanoWriter(TimeStampNanoVector vector)
     {
         super(vector);
@@ -38,24 +45,25 @@ public final class TimestampNanoWriter
     protected void writeValue(Block block, int position)
     {
         LongTimestamp timestamp = (LongTimestamp) TIMESTAMP_NANOS.getObject(block, position);
-        // Convert LongTimestamp to nanoseconds since epoch
-        // For picosecond timestamps, epochMicros can be very large, so we need to check for overflow
         try {
-            long epochNanos = multiplyExact(timestamp.getEpochMicros(), 1000L) +
-                    (timestamp.getPicosOfMicro() / 1000L);
-            vector.set(position, epochNanos);
+            vector.set(position, toEpochNanos(timestamp.getEpochMicros(), NANOSECONDS_PER_MICROSECOND, timestamp.getPicosOfMicro() / PICOSECONDS_PER_NANOSECOND));
         }
         catch (ArithmeticException e) {
-            // Handle overflow by saturating to max/min values
-            long epochMicros = timestamp.getEpochMicros();
-            if (epochMicros > 0) {
-                // Positive overflow - set to max representable nanoseconds
-                vector.set(position, Long.MAX_VALUE);
-            }
-            else {
-                // Negative overflow - set to min representable nanoseconds
-                vector.set(position, Long.MIN_VALUE);
-            }
+            throw new TrinoException(NUMERIC_VALUE_OUT_OF_RANGE, "Timestamp %s is out of range for the Arrow encoding, which supports values between %s".formatted(TIMESTAMP_NANOS.getObjectValue(block, position), NANOSECOND_RANGE), e);
         }
+    }
+
+    /**
+     * Returns {@code epochUnits * nanosecondsPerUnit + nanosecondsOfUnit}, avoiding the overflow of the product for the
+     * smallest values that are still representable.
+     *
+     * @throws ArithmeticException if the value is out of the range of nanoseconds since the epoch
+     */
+    static long toEpochNanos(long epochUnits, long nanosecondsPerUnit, long nanosecondsOfUnit)
+    {
+        if (epochUnits < 0) {
+            return addExact(multiplyExact(epochUnits + 1, nanosecondsPerUnit), nanosecondsOfUnit - nanosecondsPerUnit);
+        }
+        return addExact(multiplyExact(epochUnits, nanosecondsPerUnit), nanosecondsOfUnit);
     }
 }
