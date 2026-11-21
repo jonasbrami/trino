@@ -1329,6 +1329,33 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testDuplicateRowFieldNames()
+            throws IOException
+    {
+        // Arrow struct vectors cannot have several children with the same name, including generated names of anonymous fields
+        RowType duplicate = RowType.rowType(RowType.field("a", BIGINT), RowType.field("a", VARCHAR));
+        RowType generatedDuplicate = RowType.from(ImmutableList.of(RowType.field("field1", BIGINT), new RowType.Field(Optional.empty(), BIGINT)));
+        List<OutputColumn> columns = ImmutableList.of(
+                new OutputColumn(0, "duplicate", duplicate),
+                new OutputColumn(1, "generated_duplicate", generatedDuplicate),
+                new OutputColumn(2, "nested", new ArrayType(duplicate)),
+                new OutputColumn(3, "anonymous", RowType.anonymous(ImmutableList.of(BIGINT, BIGINT))));
+        assertThat(new ArrowQueryDataEncoder.Factory(allocator, Optional.empty()).unsupported(columns))
+                .extracting(OutputColumn::columnName)
+                .containsExactly("duplicate", "generated_duplicate", "nested");
+
+        // Names differing only by case are distinct
+        RowType caseSensitive = RowType.rowType(RowType.field("a", BIGINT), RowType.field("A", BIGINT));
+        RowBlockBuilder blockBuilder = caseSensitive.createBlockBuilder(null, 1);
+        blockBuilder.buildEntry(fields -> {
+            BIGINT.writeLong(fields.get(0), 1L);
+            BIGINT.writeLong(fields.get(1), 2L);
+        });
+        assertThat(roundTrip(ImmutableList.of(typed("col0", caseSensitive)), page(blockBuilder.build())))
+                .containsExactly(List.of(Row.builder().addField("a", 1L).addField("A", 2L).build()));
+    }
+
+    @Test
     public void testRowSerializationWithValues()
             throws IOException
     {
