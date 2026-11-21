@@ -20,10 +20,12 @@ import io.trino.client.Column;
 import io.trino.client.QueryDataDecoder;
 import io.trino.client.spooling.DataAttributes;
 import io.trino.client.spooling.encoding.ArrowQueryDataDecoder;
+import io.trino.client.spooling.encoding.JsonQueryDataDecoder;
 import io.trino.json.JsonItems;
 import io.trino.server.protocol.spooling.QueryDataEncoder;
 import io.trino.server.protocol.spooling.encoding.ArrowCompressionFactory;
 import io.trino.server.protocol.spooling.encoding.ArrowQueryDataEncoder;
+import io.trino.server.protocol.spooling.encoding.JsonQueryDataEncoder;
 import io.trino.spi.Page;
 import io.trino.spi.block.ArrayBlockBuilder;
 import io.trino.spi.block.Block;
@@ -48,6 +50,7 @@ import org.apache.arrow.memory.RootAllocator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -95,6 +98,7 @@ import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MILLIS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_NANOS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_SECONDS;
+import static io.trino.spi.type.TimeZoneKey.UTC_KEY;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MICROS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_NANOS;
@@ -638,6 +642,69 @@ public class TestArrowEncodingUtils
 
         List<List<Object>> result = roundTrip(columns, page);
         assertThat(result).hasSize(2);
+    }
+
+    @Test
+    public void testTimestampOutsideOfNanosecondRange()
+            throws IOException
+    {
+        // Values outside of the range of nanoseconds since the epoch (1677-09-21 to 2262-04-11) must not overflow
+        BlockBuilder blockBuilder = TIMESTAMP_MICROS.createBlockBuilder(null, 6);
+        TIMESTAMP_MICROS.writeLong(blockBuilder, -62_135_596_800_000_000L); // 0001-01-01 00:00:00
+        TIMESTAMP_MICROS.writeLong(blockBuilder, -11_676_096_000_000_000L + 123_456); // 1600-01-01 00:00:00.123456
+        TIMESTAMP_MICROS.writeLong(blockBuilder, -1); // 1969-12-31 23:59:59.999999
+        TIMESTAMP_MICROS.writeLong(blockBuilder, 9_224_000_000_000_000L); // 2262-04-19 06:13:20
+        TIMESTAMP_MICROS.writeLong(blockBuilder, 253_402_300_799_999_999L); // 9999-12-31 23:59:59.999999
+        blockBuilder.appendNull();
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_MICROS));
+        Page page = page(blockBuilder.build());
+
+        assertThat(roundTrip(columns, page))
+                .containsExactly(
+                        List.of("0001-01-01 00:00:00.000000"),
+                        List.of("1600-01-01 00:00:00.123456"),
+                        List.of("1969-12-31 23:59:59.999999"),
+                        List.of("2262-04-19 06:13:20.000000"),
+                        List.of("9999-12-31 23:59:59.999999"),
+                        Arrays.asList((Object) null))
+                .isEqualTo(jsonRoundTrip(columns, page));
+    }
+
+    @Test
+    public void testTimestampWithTimeZoneOutsideOfNanosecondRange()
+            throws IOException
+    {
+        BlockBuilder blockBuilder = TIMESTAMP_TZ_MICROS.createBlockBuilder(null, 4);
+        TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, LongTimestampWithTimeZone.fromEpochMillisAndFraction(-62_135_596_800_000L, 0, UTC_KEY));
+        TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, LongTimestampWithTimeZone.fromEpochMillisAndFraction(-11_676_096_000_000L + 123, 456_000_000, UTC_KEY));
+        TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, LongTimestampWithTimeZone.fromEpochMillisAndFraction(-1, 999_000_000, UTC_KEY));
+        TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, LongTimestampWithTimeZone.fromEpochMillisAndFraction(253_402_300_799_999L, 999_000_000, UTC_KEY));
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_MICROS));
+
+        assertThat(roundTrip(columns, page(blockBuilder.build()))).containsExactly(
+                List.of("0001-01-01 00:00:00.000000 Z"),
+                List.of("1600-01-01 00:00:00.123456 Z"),
+                List.of("1969-12-31 23:59:59.999999 Z"),
+                List.of("9999-12-31 23:59:59.999999 Z"));
+    }
+
+    @Test
+    public void testTimestampNanosRange()
+            throws IOException
+    {
+        BlockBuilder blockBuilder = TIMESTAMP_NANOS.createBlockBuilder(null, 3);
+        TIMESTAMP_NANOS.writeObject(blockBuilder, new LongTimestamp(-9_223_372_036_854_776L, 192_000)); // smallest nanosecond value
+        TIMESTAMP_NANOS.writeObject(blockBuilder, new LongTimestamp(-1, 1_000)); // 1969-12-31 23:59:59.999999001
+        TIMESTAMP_NANOS.writeObject(blockBuilder, new LongTimestamp(9_223_372_036_854_775L, 807_000)); // largest nanosecond value
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_NANOS));
+        Page page = page(blockBuilder.build());
+
+        assertThat(roundTrip(columns, page))
+                .containsExactly(
+                        List.of("1677-09-21 00:12:43.145224192"),
+                        List.of("1969-12-31 23:59:59.999999001"),
+                        List.of("2262-04-11 23:47:16.854775807"))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -1414,6 +1481,30 @@ public class TestArrowEncodingUtils
             encoder.encodeTo(output, List.of(page));
 
             QueryDataDecoder decoder = newDecoder(columns, supportsParametricInterval);
+            try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
+                return ImmutableList.copyOf(iterator);
+            }
+        }
+        finally {
+            encoder.close();
+        }
+    }
+
+    private static List<List<Object>> jsonRoundTrip(List<TypedColumn> columns, Page page)
+            throws IOException
+    {
+        ImmutableList.Builder<OutputColumn> outputColumns = ImmutableList.builder();
+        ImmutableList.Builder<Column> clientColumns = ImmutableList.builder();
+        for (int i = 0; i < columns.size(); i++) {
+            TypedColumn column = columns.get(i);
+            outputColumns.add(new OutputColumn(i, column.name(), column.type()));
+            clientColumns.add(createColumn(column.name(), column.type(), true, true, false, false, true));
+        }
+        QueryDataEncoder encoder = new JsonQueryDataEncoder.Factory(new JsonMapper()).create(TEST_SESSION, outputColumns.build());
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            encoder.encodeTo(output, List.of(page));
+            QueryDataDecoder decoder = new JsonQueryDataDecoder.Factory().create(clientColumns.build(), DataAttributes.empty(), false);
             try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
                 return ImmutableList.copyOf(iterator);
             }
