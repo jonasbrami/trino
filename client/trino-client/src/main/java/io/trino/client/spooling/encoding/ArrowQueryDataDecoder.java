@@ -122,7 +122,13 @@ public class ArrowQueryDataDecoder
         @Override
         public boolean hasNext()
         {
-            return currentRow < currentMaxRows || advance();
+            // Skip empty batches
+            while (currentRow >= currentMaxRows) {
+                if (!advance()) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         @Override
