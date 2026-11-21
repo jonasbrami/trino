@@ -15,16 +15,16 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
 import io.trino.type.IntervalYearMonthType;
-import org.apache.arrow.vector.IntervalYearVector;
+import org.apache.arrow.vector.IntervalMonthDayNanoVector;
 
 import static java.util.Objects.requireNonNull;
 
 public final class IntervalYearMonthWriter
-        extends FixedWidthWriter<IntervalYearVector>
+        extends FixedWidthWriter<IntervalMonthDayNanoVector>
 {
     private final IntervalYearMonthType type;
 
-    public IntervalYearMonthWriter(IntervalYearVector vector, IntervalYearMonthType type)
+    public IntervalYearMonthWriter(IntervalMonthDayNanoVector vector, IntervalYearMonthType type)
     {
         super(vector);
         this.type = requireNonNull(type, "type is null");
@@ -39,7 +39,6 @@ public final class IntervalYearMonthWriter
     @Override
     protected void writeValue(Block block, int position)
     {
-        int months = type.getInt(block, position);
-        vector.set(position, months);
+        vector.set(position, type.getInt(block, position), 0, 0);
     }
 }

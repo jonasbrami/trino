@@ -50,6 +50,8 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.types.IntervalUnit;
+import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -1257,18 +1259,24 @@ public class TestArrowEncodingUtils
             throws IOException
     {
         List<TypedColumn> columns = ImmutableList.of(typed("col0", IntervalYearMonthType.INTERVAL_YEAR_MONTH));
-        BlockBuilder blockBuilder = IntervalYearMonthType.INTERVAL_YEAR_MONTH.createBlockBuilder(null, 3);
+        BlockBuilder blockBuilder = IntervalYearMonthType.INTERVAL_YEAR_MONTH.createBlockBuilder(null, 4);
         IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, 15); // 15 months = 1 year 3 months
         IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, 25); // 25 months = 2 years 1 month
         IntervalYearMonthType.INTERVAL_YEAR_MONTH.writeInt(blockBuilder, -7); // -7 months
+        blockBuilder.appendNull();
         Page page = page(blockBuilder.build());
 
-        List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(3);
-        // IntervalYearMonth values are returned as YYYY-MM format by Arrow decoder
-        assertThat(result.get(0).get(0).toString()).isEqualTo("1-3");   // 15 months = 1 year 3 months
-        assertThat(result.get(1).get(0).toString()).isEqualTo("2-1");   // 25 months = 2 years 1 month
-        assertThat(result.get(2).get(0).toString()).isEqualTo("-0-7");  // -7 months
+        // Year-month intervals are written as a number of months in a month-day-nano interval, which Arrow readers like pyarrow support
+        assertThat(toArrowField("col0", IntervalYearMonthType.INTERVAL_YEAR_MONTH, true).getType())
+                .isEqualTo(new ArrowType.Interval(IntervalUnit.MONTH_DAY_NANO));
+
+        assertThat(roundTrip(columns, page))
+                .containsExactly(
+                        List.of("1-3"),
+                        List.of("2-1"),
+                        List.of("-0-7"),
+                        Arrays.asList((Object) null))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
