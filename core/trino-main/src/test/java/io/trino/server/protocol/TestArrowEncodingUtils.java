@@ -73,11 +73,14 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.slice.Slices.utf8Slice;
 import static io.trino.SessionTestUtils.TEST_SESSION;
 import static io.trino.block.BlockAssertions.createBlockOfReals;
@@ -1617,6 +1620,67 @@ public class TestArrowEncodingUtils
                     encoder.close();
                 }
             }
+        }
+    }
+
+    @Test
+    public void testZstdRoundTrip()
+            throws IOException
+    {
+        // Both compressible and incompressible buffers, which are sent uncompressed
+        Random random = new Random(42);
+        int rows = 10_000;
+        BlockBuilder repeated = VARCHAR.createBlockBuilder(null, rows);
+        BlockBuilder randomBytes = VARBINARY.createBlockBuilder(null, rows);
+        BlockBuilder sequence = BIGINT.createBlockBuilder(null, rows);
+        for (int i = 0; i < rows; i++) {
+            VARCHAR.writeSlice(repeated, utf8Slice("value " + (i % 10)));
+            byte[] bytes = new byte[16];
+            random.nextBytes(bytes);
+            VARBINARY.writeSlice(randomBytes, Slices.wrappedBuffer(bytes));
+            BIGINT.writeLong(sequence, i);
+        }
+        List<OutputColumn> columns = ImmutableList.of(
+                new OutputColumn(0, "repeated", VARCHAR),
+                new OutputColumn(1, "random", VARBINARY),
+                new OutputColumn(2, "sequence", BIGINT));
+        Page page = page(repeated.build(), randomBytes.build(), sequence.build());
+
+        List<List<Object>> uncompressed = encodeAndDecode(new ArrowQueryDataEncoder.Factory(allocator, Optional.empty()), new ArrowQueryDataDecoder.Factory(), columns, page);
+        List<List<Object>> compressed = encodeAndDecode(new ArrowQueryDataEncoder.ZstdFactory(allocator, new ArrowCompressionFactory(), Optional.empty()), new ArrowQueryDataDecoder.ZstdFactory(), columns, page);
+
+        assertThat(compressed).hasSize(rows);
+        assertThat(withHexBinary(compressed)).isEqualTo(withHexBinary(uncompressed));
+        assertThat(compressed.get(1).get(0)).isEqualTo("value 1");
+        assertThat(compressed.get(1).get(2)).isEqualTo(1L);
+    }
+
+    private static List<List<Object>> withHexBinary(List<List<Object>> rows)
+    {
+        return rows.stream()
+                .map(row -> row.stream()
+                        .map(value -> value instanceof byte[] bytes ? HexFormat.of().formatHex(bytes) : value)
+                        .toList())
+                .collect(toImmutableList());
+    }
+
+    private static List<List<Object>> encodeAndDecode(QueryDataEncoder.Factory encoderFactory, QueryDataDecoder.Factory decoderFactory, List<OutputColumn> columns, Page page)
+            throws IOException
+    {
+        QueryDataEncoder encoder = encoderFactory.create(TEST_SESSION, columns);
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            encoder.encodeTo(output, List.of(page));
+            List<Column> clientColumns = columns.stream()
+                    .map(column -> createColumn(column.columnName(), column.type(), true, true, false, false, true))
+                    .collect(toImmutableList());
+            QueryDataDecoder decoder = decoderFactory.create(clientColumns, DataAttributes.empty(), false);
+            try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
+                return ImmutableList.copyOf(iterator);
+            }
+        }
+        finally {
+            encoder.close();
         }
     }
 
