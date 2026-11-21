@@ -23,22 +23,26 @@ import java.lang.foreign.MemorySegment;
 
 import static java.lang.Math.toIntExact;
 import static org.apache.arrow.vector.compression.CompressionUtil.CodecType.ZSTD;
+import static org.apache.arrow.vector.compression.CompressionUtil.SIZE_OF_UNCOMPRESSED_LENGTH;
 
 public class ZstdCompressionCodec
         extends AbstractCompressionCodec
 {
+    // Zstd compressors are stateless, and a codec is only used by the stream writer that created it
+    private final ZstdCompressor compressor = ZstdCompressor.create();
+
     @Override
     protected ArrowBuf doCompress(BufferAllocator allocator, ArrowBuf uncompressedBuffer)
     {
-        ZstdCompressor compressor = ZstdCompressor.create();
-        long dstSize = 8L + compressor.maxCompressedLength(toIntExact(uncompressedBuffer.writerIndex()));
-        ArrowBuf compressedBuffer = allocator.buffer(dstSize);
+        long maxCompressedLength = compressor.maxCompressedLength(toIntExact(uncompressedBuffer.writerIndex()));
+        // The compressed data follows the uncompressed length, which AbstractCompressionCodec writes afterward
+        ArrowBuf compressedBuffer = allocator.buffer(SIZE_OF_UNCOMPRESSED_LENGTH + maxCompressedLength);
 
         try {
             long written = compressor.compress(
                     MemorySegment.ofAddress(uncompressedBuffer.memoryAddress()).reinterpret(uncompressedBuffer.writerIndex()),
-                    MemorySegment.ofAddress(compressedBuffer.memoryAddress() + 8L).reinterpret(dstSize));
-            compressedBuffer.writerIndex(8L + written);
+                    MemorySegment.ofAddress(compressedBuffer.memoryAddress() + SIZE_OF_UNCOMPRESSED_LENGTH).reinterpret(maxCompressedLength));
+            compressedBuffer.writerIndex(SIZE_OF_UNCOMPRESSED_LENGTH + written);
             return compressedBuffer;
         }
         catch (Exception e) {
