@@ -15,13 +15,12 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
 
+// No extension types yet
 public sealed interface ArrowWriter
-        permits
-        PrimitiveWriter,
-        ArrayWriter,
-        MapWriter,
-        RowWriter
-        // No extension types yet
+        permits ArrayWriter,
+                MapWriter,
+                PrimitiveWriter,
+                RowWriter
 {
     void write(Block block);
 }

@@ -17,12 +17,17 @@ import io.trino.spi.block.Block;
 import io.trino.type.IntervalYearMonthType;
 import org.apache.arrow.vector.IntervalYearVector;
 
+import static java.util.Objects.requireNonNull;
+
 public final class IntervalYearMonthWriter
         extends FixedWidthWriter<IntervalYearVector>
 {
-    public IntervalYearMonthWriter(IntervalYearVector vector)
+    private final IntervalYearMonthType type;
+
+    public IntervalYearMonthWriter(IntervalYearVector vector, IntervalYearMonthType type)
     {
         super(vector);
+        this.type = requireNonNull(type, "type is null");
     }
 
     @Override
@@ -34,7 +39,7 @@ public final class IntervalYearMonthWriter
     @Override
     protected void writeValue(Block block, int position)
     {
-        int months = IntervalYearMonthType.INTERVAL_YEAR_MONTH.getInt(block, position);
+        int months = type.getInt(block, position);
         vector.set(position, months);
     }
 }

@@ -42,7 +42,7 @@ public final class TimestampNanoWriter
         // For picosecond timestamps, epochMicros can be very large, so we need to check for overflow
         try {
             long epochNanos = multiplyExact(timestamp.getEpochMicros(), 1000L) +
-                             (timestamp.getPicosOfMicro() / 1000L);
+                    (timestamp.getPicosOfMicro() / 1000L);
             vector.set(position, epochNanos);
         }
         catch (ArithmeticException e) {

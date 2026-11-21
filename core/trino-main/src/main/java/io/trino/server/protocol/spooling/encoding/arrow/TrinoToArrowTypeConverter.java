@@ -53,7 +53,6 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static org.apache.arrow.vector.types.DateUnit.DAY;
 import static org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE;
 import static org.apache.arrow.vector.types.FloatingPointPrecision.SINGLE;
-import static org.apache.arrow.vector.types.IntervalUnit.DAY_TIME;
 import static org.apache.arrow.vector.types.IntervalUnit.YEAR_MONTH;
 import static org.apache.arrow.vector.types.TimeUnit.MICROSECOND;
 import static org.apache.arrow.vector.types.TimeUnit.MILLISECOND;
@@ -72,7 +71,8 @@ public final class TrinoToArrowTypeConverter
             case ArrayType t -> new Field(name, new FieldType(true, new ArrowType.List(), null), List.of(
                     toArrowField("element", t.getElementType(), true)));
             case MapType mapType -> {
-                Field entries = new Field("entries",
+                Field entries = new Field(
+                        "entries",
                         notNullable(ArrowType.Struct.INSTANCE),
                         List.of(toArrowField("key", mapType.getKeyType(), false), toArrowField("value", mapType.getValueType(), nullable)));
                 yield new Field(name, nullable(new ArrowType.Map(false)), List.of(entries));
@@ -156,7 +156,8 @@ public final class TrinoToArrowTypeConverter
             case ArrayType _ -> new ArrowType.List();
             case MapType _ -> new ArrowType.Map(false);
             case RowType _ -> new ArrowType.Struct();
-            case IntervalDayTimeType _ -> new ArrowType.Interval(DAY_TIME);
+            // Day-time intervals with up to microsecond precision are stored as microseconds, longer ones (picoseconds) are not supported
+            case IntervalDayTimeType intervalDayTime when intervalDayTime.isShort() -> new ArrowType.Duration(MICROSECOND);
             case IntervalYearMonthType _ -> new ArrowType.Interval(YEAR_MONTH);
             case JsonType _ -> new ArrowType.Utf8();
             case UnknownType _ -> new ArrowType.Null();

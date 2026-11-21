@@ -20,6 +20,7 @@ import io.trino.client.Column;
 import io.trino.client.QueryDataDecoder;
 import io.trino.client.spooling.DataAttributes;
 import io.trino.client.spooling.encoding.ArrowQueryDataDecoder;
+import io.trino.json.JsonItems;
 import io.trino.server.protocol.spooling.QueryDataEncoder;
 import io.trino.server.protocol.spooling.encoding.ArrowQueryDataEncoder;
 import io.trino.spi.Page;
@@ -77,6 +78,9 @@ import static io.trino.spi.type.DateType.DATE;
 import static io.trino.spi.type.DecimalType.createDecimalType;
 import static io.trino.spi.type.DoubleType.DOUBLE;
 import static io.trino.spi.type.IntegerType.INTEGER;
+import static io.trino.spi.type.IntervalField.DAY;
+import static io.trino.spi.type.IntervalField.HOUR;
+import static io.trino.spi.type.IntervalField.SECOND;
 import static io.trino.spi.type.RealType.REAL;
 import static io.trino.spi.type.SmallintType.SMALLINT;
 import static io.trino.spi.type.TimeType.TIME_MICROS;
@@ -102,6 +106,8 @@ import static io.trino.spi.type.TinyintType.TINYINT;
 import static io.trino.spi.type.UuidType.UUID;
 import static io.trino.spi.type.VarbinaryType.VARBINARY;
 import static io.trino.spi.type.VarcharType.VARCHAR;
+import static io.trino.type.IntervalDayTimeType.INTERVAL_DAY_TIME;
+import static io.trino.type.IntervalDayTimeType.createIntervalDayTimeType;
 import static io.trino.type.UnknownType.UNKNOWN;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -672,6 +678,24 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testEncodedJsonSerialization()
+            throws IOException
+    {
+        // JSON values parsed by the engine are stored in the typed encoding rather than as raw text
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", JsonType.JSON));
+        BlockBuilder blockBuilder = JsonType.JSON.createBlockBuilder(null, 3);
+        JsonType.JSON.writeObject(blockBuilder, JsonItems.fromText(utf8Slice("{\"name\": \"Alice\", \"tags\": [1, 2.5, null, true]}")));
+        JsonType.JSON.writeObject(blockBuilder, JsonItems.fromText(utf8Slice("\"text\"")));
+        blockBuilder.appendNull();
+        Block block = blockBuilder.build();
+
+        assertThat(roundTrip(columns, page(block))).containsExactly(
+                List.of(JsonType.JSON.getObjectValue(block, 0)),
+                List.of(JsonType.JSON.getObjectValue(block, 1)),
+                Arrays.asList((Object) null));
+    }
+
+    @Test
     public void testSimpleRowFromSQL()
             throws IOException
     {
@@ -1117,14 +1141,79 @@ public class TestArrowEncodingUtils
     public void testIntervalDayTimeSerialization()
             throws IOException
     {
-        List<TypedColumn> columns = ImmutableList.of(typed("col0", IntervalDayTimeType.INTERVAL_DAY_TIME));
-        BlockBuilder blockBuilder = IntervalDayTimeType.INTERVAL_DAY_TIME.createBlockBuilder(null, 2);
-        IntervalDayTimeType.INTERVAL_DAY_TIME.writeLong(blockBuilder, 0x0000000100000001L); // 1 day, 1 millisecond
-        IntervalDayTimeType.INTERVAL_DAY_TIME.writeLong(blockBuilder, 0x0000000200000002L); // 2 days, 2 milliseconds
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", INTERVAL_DAY_TIME));
+        Page page = page(intervalDayTimeBlock(INTERVAL_DAY_TIME));
+
+        // Day-time intervals are stored as microseconds and rendered with the fractional precision of the type
+        assertThat(roundTrip(columns, page)).containsExactly(
+                List.of("1 00:00:00.001000"),
+                List.of("2 00:00:00.000002"),
+                List.of("-0 00:00:01.500000"),
+                List.of("0 00:00:00.000500"),
+                Arrays.asList((Object) null));
+
+        // Clients without the parametric interval capability get values rounded to milliseconds, as with the JSON encoding
+        assertThat(roundTrip(columns, page, false)).containsExactly(
+                List.of("1 00:00:00.001"),
+                List.of("2 00:00:00.000"),
+                List.of("-0 00:00:01.500"),
+                List.of("0 00:00:00.001"),
+                Arrays.asList((Object) null));
+    }
+
+    @Test
+    public void testIntervalDayTimeWithoutFractionalSeconds()
+            throws IOException
+    {
+        IntervalDayTimeType dayToHour = createIntervalDayTimeType(DAY, HOUR);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", dayToHour));
+        BlockBuilder blockBuilder = dayToHour.createBlockBuilder(null, 1);
+        dayToHour.writeLong(blockBuilder, 26 * 3600 * 1_000_000L); // 1 day, 2 hours
         Page page = page(blockBuilder.build());
 
-        List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(2);
+        assertThat(roundTrip(columns, page)).containsExactly(List.of("1 02:00:00"));
+    }
+
+    @Test
+    public void testArrayOfIntervalDayTime()
+            throws IOException
+    {
+        ArrayType arrayType = new ArrayType(INTERVAL_DAY_TIME);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", arrayType));
+        ArrayBlockBuilder blockBuilder = arrayType.createBlockBuilder(null, 1);
+        blockBuilder.buildEntry(elementBuilder -> {
+            INTERVAL_DAY_TIME.writeLong(elementBuilder, 1_000_001L);
+            elementBuilder.appendNull();
+        });
+        Page page = page(blockBuilder.build());
+
+        assertThat(roundTrip(columns, page)).containsExactly(
+                List.of(Arrays.asList("0 00:00:01.000001", null)));
+    }
+
+    @Test
+    public void testUnsupportedPicosecondIntervalDayTime()
+    {
+        IntervalDayTimeType picosecondInterval = createIntervalDayTimeType(DAY, SECOND, 9, 12);
+        List<OutputColumn> columns = ImmutableList.of(
+                new OutputColumn(0, "supported", INTERVAL_DAY_TIME),
+                new OutputColumn(1, "unsupported", picosecondInterval),
+                new OutputColumn(2, "nested", new ArrayType(picosecondInterval)));
+
+        assertThat(new ArrowQueryDataEncoder.Factory(allocator, Optional.empty()).unsupported(columns))
+                .extracting(OutputColumn::columnName)
+                .containsExactly("unsupported", "nested");
+    }
+
+    private static Block intervalDayTimeBlock(IntervalDayTimeType type)
+    {
+        BlockBuilder blockBuilder = type.createBlockBuilder(null, 5);
+        type.writeLong(blockBuilder, 86_400_000_000L + 1_000L); // 1 day, 1 millisecond
+        type.writeLong(blockBuilder, 2 * 86_400_000_000L + 2L); // 2 days, 2 microseconds
+        type.writeLong(blockBuilder, -1_500_000L); // -1.5 seconds
+        type.writeLong(blockBuilder, 500L); // half a millisecond, rounded up for legacy clients
+        blockBuilder.appendNull();
+        return blockBuilder.build();
     }
 
     @Test
@@ -1219,12 +1308,18 @@ public class TestArrowEncodingUtils
     protected List<List<Object>> roundTrip(List<TypedColumn> columns, Page page)
             throws IOException
     {
+        return roundTrip(columns, page, true);
+    }
+
+    private List<List<Object>> roundTrip(List<TypedColumn> columns, Page page, boolean supportsParametricInterval)
+            throws IOException
+    {
         QueryDataEncoder encoder = newEncoder(columns);
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             encoder.encodeTo(output, List.of(page));
 
-            QueryDataDecoder decoder = newDecoder(columns);
+            QueryDataDecoder decoder = newDecoder(columns, supportsParametricInterval);
             try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
                 return ImmutableList.copyOf(iterator);
             }
@@ -1263,11 +1358,11 @@ public class TestArrowEncodingUtils
         return createEncoder(columns.build());
     }
 
-    private QueryDataDecoder newDecoder(List<TypedColumn> types)
+    private QueryDataDecoder newDecoder(List<TypedColumn> types, boolean supportsParametricInterval)
     {
         ImmutableList.Builder<Column> columns = ImmutableList.builderWithExpectedSize(types.size());
         for (TypedColumn typedColumn : types) {
-            columns.add(createColumn(typedColumn.name(), typedColumn.type(), true, true, false, false));
+            columns.add(createColumn(typedColumn.name(), typedColumn.type(), true, true, false, false, supportsParametricInterval));
         }
         return createDecoder(columns.build());
     }

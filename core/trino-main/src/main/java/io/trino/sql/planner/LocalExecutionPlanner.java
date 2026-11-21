@@ -985,28 +985,28 @@ public class LocalExecutionPlanner
                 return operation;
             }
 
-            QueryDataEncoder.Factory encoderFactory = encoders.get(session.getQueryDataEncoding().orElseThrow());
+            QueryDataEncoder.Factory encoderFactory = session
+                    .getQueryDataEncoding()
+                    .map(encoders::get)
+                    .orElseThrow(() -> new IllegalStateException("Spooled query encoding was not found"));
 
-            // Build output columns for the encoder
             List<String> columnNames = node.getColumnNames();
             List<Symbol> outputSymbols = node.getOutputSymbols();
             ImmutableList.Builder<OutputColumn> outputColumnBuilder = ImmutableList.builderWithExpectedSize(node.getColumnNames().size());
             for (int i = 0; i < columnNames.size(); i++) {
                 outputColumnBuilder.add(new OutputColumn(operation.layout.get(outputSymbols.get(i)), columnNames.get(i), outputSymbols.get(i).type()));
             }
-            List<OutputColumn> outputColumns = outputColumnBuilder.build();
+            List<OutputColumn> encodingLayout = outputColumnBuilder.build();
 
-            // Check for unsupported columns
-            List<OutputColumn> unsupported = encoderFactory.unsupported(outputColumns);
+            List<OutputColumn> unsupported = encoderFactory.unsupported(encodingLayout);
             if (!unsupported.isEmpty()) {
-                throw new TrinoException(SERIALIZATION_ERROR, "Output columns %s are not supported for spooling encoding '%s'".formatted(unsupported, encoderFactory.encoding()));
+                throw new TrinoException(SERIALIZATION_ERROR, format("Output columns %s are not supported for spooling encoding '%s'", unsupported, encoderFactory.encoding()));
             }
 
-            QueryDataEncoder queryDataEncoder = encoderFactory.create(session, outputColumns);
             OutputSpoolingOperatorFactory outputSpoolingOperatorFactory = new OutputSpoolingOperatorFactory(
                     context.getNextOperatorId(),
                     node.getId(),
-                    () -> queryDataEncoder,
+                    () -> encoderFactory.create(session, encodingLayout),
                     spoolingManager.orElseThrow());
 
             return new SpooledPhysicalOperation(outputSpoolingOperatorFactory, operation);
