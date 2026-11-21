@@ -68,24 +68,25 @@ public final class TrinoToArrowTypeConverter
     public static Field toArrowField(String name, Type type, boolean nullable)
     {
         return switch (type) {
-            case ArrayType t -> new Field(name, new FieldType(true, new ArrowType.List(), null), List.of(
+            // Only map keys are not nullable, nested elements, values and fields always are
+            case ArrayType t -> new Field(name, nullableField(new ArrowType.List(), nullable), List.of(
                     toArrowField("element", t.getElementType(), true)));
             case MapType mapType -> {
                 Field entries = new Field(
                         "entries",
                         notNullable(ArrowType.Struct.INSTANCE),
-                        List.of(toArrowField("key", mapType.getKeyType(), false), toArrowField("value", mapType.getValueType(), nullable)));
-                yield new Field(name, nullable(new ArrowType.Map(false)), List.of(entries));
+                        List.of(toArrowField("key", mapType.getKeyType(), false), toArrowField("value", mapType.getValueType(), true)));
+                yield new Field(name, nullableField(new ArrowType.Map(false), nullable), List.of(entries));
             }
             case RowType rowType -> {
                 List<Field> children = IntStream.range(0, rowType.getFields().size())
                         .mapToObj(i -> {
                             RowType.Field field = rowType.getFields().get(i);
                             String fieldName = field.getName().orElse("field" + i);
-                            return toArrowField(fieldName, field.getType(), nullable);
+                            return toArrowField(fieldName, field.getType(), true);
                         })
                         .collect(toImmutableList());
-                yield new Field(name, nullable(ArrowType.Struct.INSTANCE), children);
+                yield new Field(name, nullableField(ArrowType.Struct.INSTANCE, nullable), children);
             }
             case UuidType _ -> {
                 Map<String, String> metadata = Map.of(
