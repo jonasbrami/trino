@@ -951,12 +951,14 @@ public class TestArrowEncodingUtils
         JsonType.JSON.writeObject(blockBuilder, JsonItems.fromText(utf8Slice("{\"name\": \"Alice\", \"tags\": [1, 2.5, null, true]}")));
         JsonType.JSON.writeObject(blockBuilder, JsonItems.fromText(utf8Slice("\"text\"")));
         blockBuilder.appendNull();
-        Block block = blockBuilder.build();
+        Page page = page(blockBuilder.build());
 
-        assertThat(roundTrip(columns, page(block))).containsExactly(
-                List.of(JsonType.JSON.getObjectValue(block, 0)),
-                List.of(JsonType.JSON.getObjectValue(block, 1)),
-                Arrays.asList((Object) null));
+        assertThat(roundTrip(columns, page))
+                .containsExactly(
+                        List.of("{\"name\":\"Alice\",\"tags\":[1,2.5,null,true]}"),
+                        List.of("\"text\""),
+                        Arrays.asList((Object) null))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
