@@ -13,10 +13,11 @@
  */
 package io.trino.client.spooling.encoding;
 
+import com.google.common.collect.ImmutableList;
 import io.trino.client.ClientTypeSignature;
 import io.trino.client.ClientTypeSignatureParameter;
 import io.trino.client.Column;
-import io.trino.client.NamedClientTypeSignature;
+import io.trino.client.Row;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.DateDayVector;
@@ -61,6 +62,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
 
@@ -745,6 +747,7 @@ public class ArrowDecodingUtils
             implements VectorTypeDecoder
     {
         private final List<VectorTypeDecoder> fieldDecoders;
+        private final List<Optional<String>> fieldNames;
         private final StructVector vector;
 
         public RowDecoder(ClientTypeSignature signature, StructVector vector)
@@ -753,15 +756,20 @@ public class ArrowDecodingUtils
             this.vector = requireNonNull(vector, "vector is null");
 
             checkArgument(signature.getRawType().equals(ROW), "not a row type signature: %s", signature);
+            List<ClientTypeSignatureParameter> arguments = signature.getArguments();
             List<FieldVector> children = vector.getChildrenFromFields();
+            checkArgument(children.size() == arguments.size(), "Expected %s row fields, but got %s", arguments.size(), children.size());
 
-            // ROW types use named type signatures, not plain type signatures
-            this.fieldDecoders = new ArrayList<>();
-            for (int i = 0; i < children.size(); i++) {
-                ClientTypeSignatureParameter parameter = signature.getArguments().get(i);
-                NamedClientTypeSignature namedTypeSignature = parameter.getNamedTypeSignature();
-                this.fieldDecoders.add(createVectorTypeDecoder(namedTypeSignature.getTypeSignature(), children.get(i)));
+            // Field names come from the type signature, as with the JSON encoding; anonymous fields are unnamed
+            ImmutableList.Builder<VectorTypeDecoder> fieldDecoders = ImmutableList.builderWithExpectedSize(arguments.size());
+            ImmutableList.Builder<Optional<String>> fieldNames = ImmutableList.builderWithExpectedSize(arguments.size());
+            for (int i = 0; i < arguments.size(); i++) {
+                ClientTypeSignatureParameter parameter = arguments.get(i);
+                fieldDecoders.add(createVectorTypeDecoder(parameter.getTypeSignature(), children.get(i)));
+                fieldNames.add(parameter.getName());
             }
+            this.fieldDecoders = fieldDecoders.build();
+            this.fieldNames = fieldNames.build();
         }
 
         @Override
@@ -771,11 +779,11 @@ public class ArrowDecodingUtils
                 return null;
             }
 
-            List<Object> values = new ArrayList<>();
-            for (VectorTypeDecoder fieldDecoder : fieldDecoders) {
-                values.add(fieldDecoder.decode(position));
+            Row.Builder row = Row.builderWithExpectedSize(fieldDecoders.size());
+            for (int i = 0; i < fieldDecoders.size(); i++) {
+                row.addField(fieldNames.get(i), fieldDecoders.get(i).decode(position));
             }
-            return unmodifiableList(values);
+            return row.build();
         }
 
         @Override
