@@ -55,6 +55,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -107,6 +108,7 @@ public class ArrowDecodingUtils
 {
     private static final long MICROSECONDS_PER_SECOND = 1_000_000;
     private static final long NANOSECONDS_PER_MICROSECOND = 1_000;
+    private static final long NANOSECONDS_PER_MILLISECOND = 1_000_000;
     private static final long NANOSECONDS_PER_SECOND = 1_000_000_000;
 
     private ArrowDecodingUtils() {}
@@ -161,11 +163,11 @@ public class ArrowDecodingUtils
             case INTERVAL_YEAR_TO_MONTH:
                 return new IntervalYearMonthDecoder(checkedCast(vector, IntervalMonthDayNanoVector.class));
             case TIME:
-                return new TimeDecoder(vector);
+                return new TimeDecoder(vector, false);
             case TIME_WITH_TIME_ZONE:
-                return new TimeWithTimeZoneDecoder(vector);
+                return new TimeDecoder(vector, true);
             case TIMESTAMP_WITH_TIME_ZONE:
-                return new TimestampWithTimeZoneDecoder(vector);
+                return new TimestampWithTimeZoneDecoder(checkedCast(vector, TimeStampVector.class));
             case ROW:
                 return new RowDecoder(signature, checkedCast(vector, StructVector.class));
             case JSON:
@@ -381,10 +383,12 @@ public class ArrowDecodingUtils
             implements VectorTypeDecoder
     {
         private final TimeStampVector vector;
+        private final DateTimeFormatter formatter;
 
         public TimestampDecoder(TimeStampVector vector)
         {
             this.vector = requireNonNull(vector, "vector is null");
+            this.formatter = timestampFormatter(timestampPrecision(vector));
         }
 
         @Override
@@ -393,44 +397,7 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-
-            LocalDateTime dateTime;
-            int precision;
-
-            if (vector instanceof TimeStampSecVector) {
-                long seconds = ((TimeStampSecVector) vector).get(position);
-                dateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(seconds), ZoneOffset.UTC);
-                precision = 0;
-            }
-            else if (vector instanceof TimeStampMilliVector) {
-                long millis = ((TimeStampMilliVector) vector).get(position);
-                dateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneOffset.UTC);
-                precision = 3;
-            }
-            else if (vector instanceof TimeStampMicroVector) {
-                long micros = ((TimeStampMicroVector) vector).get(position);
-                dateTime = LocalDateTime.ofInstant(ofEpochMicros(micros), ZoneOffset.UTC);
-                precision = 6;
-            }
-            else if (vector instanceof TimeStampNanoVector) {
-                long nanos = ((TimeStampNanoVector) vector).get(position);
-                dateTime = LocalDateTime.ofInstant(ofEpochNanos(nanos), ZoneOffset.UTC);
-                precision = 9;
-            }
-            else {
-                throw new UnsupportedOperationException("Unsupported timestamp vector type: " + vector.getClass());
-            }
-
-            // Format with fixed precision (showing trailing zeros when needed)
-            DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
-                    .appendPattern("uuuu-MM-dd HH:mm:ss");
-
-            if (precision > 0) {
-                builder.appendFraction(NANO_OF_SECOND, precision, precision, true);
-            }
-
-            DateTimeFormatter formatter = builder.toFormatter();
-            return formatter.format(dateTime);
+            return formatter.format(LocalDateTime.ofInstant(toInstant(vector, position), ZoneOffset.UTC));
         }
 
         @Override
@@ -456,8 +423,8 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-            // TODO: expect BigDecimal directly in the JDBC driver
-            return vector.getObject(position).toString();
+            // Same representation as the JSON encoding, which never uses an exponent
+            return vector.getObject(position).toPlainString();
         }
 
         @Override
@@ -588,11 +555,18 @@ public class ArrowDecodingUtils
     private static class TimeDecoder
             implements VectorTypeDecoder
     {
-        private final ValueVector vector;
+        // Times with time zone are normalized to UTC during encoding, as Arrow has no time with time zone type
+        private static final String UTC_OFFSET = "+00:00";
 
-        public TimeDecoder(ValueVector vector)
+        private final ValueVector vector;
+        private final DateTimeFormatter formatter;
+        private final boolean withTimeZone;
+
+        public TimeDecoder(ValueVector vector, boolean withTimeZone)
         {
             this.vector = requireNonNull(vector, "vector is null");
+            this.formatter = timeFormatter(timePrecision(vector));
+            this.withTimeZone = withTimeZone;
         }
 
         @Override
@@ -602,79 +576,25 @@ public class ArrowDecodingUtils
                 return null;
             }
 
-            LocalTime time;
+            long nanoOfDay;
             if (vector instanceof TimeSecVector) {
-                int seconds = ((TimeSecVector) vector).get(position);
-                time = LocalTime.ofSecondOfDay(seconds);
+                nanoOfDay = ((TimeSecVector) vector).get(position) * NANOSECONDS_PER_SECOND;
             }
             else if (vector instanceof TimeMilliVector) {
-                int millis = ((TimeMilliVector) vector).get(position);
-                time = LocalTime.ofNanoOfDay(millis * 1_000_000L);
+                nanoOfDay = ((TimeMilliVector) vector).get(position) * NANOSECONDS_PER_MILLISECOND;
             }
             else if (vector instanceof TimeMicroVector) {
-                long micros = ((TimeMicroVector) vector).get(position);
-                time = LocalTime.ofNanoOfDay(micros * 1_000L);
-            }
-            else if (vector instanceof TimeNanoVector) {
-                long nanos = ((TimeNanoVector) vector).get(position);
-                time = LocalTime.ofNanoOfDay(nanos);
+                nanoOfDay = ((TimeMicroVector) vector).get(position) * NANOSECONDS_PER_MICROSECOND;
             }
             else {
-                throw new UnsupportedOperationException("Unsupported time vector type: " + vector.getClass());
+                nanoOfDay = ((TimeNanoVector) vector).get(position);
             }
 
-            // Format the time to match TestingTrinoClient expectations
-            return DateTimeFormatter.ISO_LOCAL_TIME.format(time);
-        }
-
-        @Override
-        public void close()
-        {
-            vector.close();
-        }
-    }
-
-    private static class TimeWithTimeZoneDecoder
-            implements VectorTypeDecoder
-    {
-        private final ValueVector vector;
-
-        public TimeWithTimeZoneDecoder(ValueVector vector)
-        {
-            this.vector = requireNonNull(vector, "vector is null");
-        }
-
-        @Override
-        public Object decode(int position)
-        {
-            if (vector.isNull(position)) {
-                return null;
+            String time = formatter.format(LocalTime.ofNanoOfDay(nanoOfDay));
+            if (withTimeZone) {
+                return time + UTC_OFFSET;
             }
-
-            LocalTime time;
-            if (vector instanceof TimeSecVector) {
-                int seconds = ((TimeSecVector) vector).get(position);
-                time = LocalTime.ofSecondOfDay(seconds);
-            }
-            else if (vector instanceof TimeMilliVector) {
-                int millis = ((TimeMilliVector) vector).get(position);
-                time = LocalTime.ofNanoOfDay(millis * 1_000_000L);
-            }
-            else if (vector instanceof TimeMicroVector) {
-                long micros = ((TimeMicroVector) vector).get(position);
-                time = LocalTime.ofNanoOfDay(micros * 1_000L);
-            }
-            else if (vector instanceof TimeNanoVector) {
-                long nanos = ((TimeNanoVector) vector).get(position);
-                time = LocalTime.ofNanoOfDay(nanos);
-            }
-            else {
-                throw new UnsupportedOperationException("Unsupported time with time zone vector type: " + vector.getClass());
-            }
-
-            // Since the time zone was normalized to UTC during encoding,
-            // we return the time with UTC offset
-            return DateTimeFormatter.ISO_OFFSET_TIME.format(time.atOffset(ZoneOffset.UTC));
+            return time;
         }
 
         @Override
@@ -687,11 +607,20 @@ public class ArrowDecodingUtils
     private static class TimestampWithTimeZoneDecoder
             implements VectorTypeDecoder
     {
-        private final ValueVector vector;
+        // Timestamps with time zone are normalized to UTC during encoding, as an Arrow vector has a single time zone
+        private static final ZoneId UTC = ZoneId.of("UTC");
 
-        public TimestampWithTimeZoneDecoder(ValueVector vector)
+        private final TimeStampVector vector;
+        private final DateTimeFormatter formatter;
+
+        public TimestampWithTimeZoneDecoder(TimeStampVector vector)
         {
             this.vector = requireNonNull(vector, "vector is null");
+            this.formatter = new DateTimeFormatterBuilder()
+                    .append(timestampFormatter(timestampPrecision(vector)))
+                    .appendLiteral(' ')
+                    .appendZoneId()
+                    .toFormatter();
         }
 
         @Override
@@ -700,46 +629,7 @@ public class ArrowDecodingUtils
             if (vector.isNull(position)) {
                 return null;
             }
-
-            ZonedDateTime zonedDateTime;
-            int precision;
-
-            if (vector instanceof TimeStampSecTZVector) {
-                long seconds = ((TimeStampSecTZVector) vector).get(position);
-                zonedDateTime = ZonedDateTime.ofInstant(Instant.ofEpochSecond(seconds), ZoneOffset.UTC);
-                precision = 0;
-            }
-            else if (vector instanceof TimeStampMilliTZVector) {
-                long millis = ((TimeStampMilliTZVector) vector).get(position);
-                zonedDateTime = ZonedDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneOffset.UTC);
-                precision = 3;
-            }
-            else if (vector instanceof TimeStampMicroTZVector) {
-                long micros = ((TimeStampMicroTZVector) vector).get(position);
-                zonedDateTime = ZonedDateTime.ofInstant(ofEpochMicros(micros), ZoneOffset.UTC);
-                precision = 6;
-            }
-            else if (vector instanceof TimeStampNanoTZVector) {
-                long nanos = ((TimeStampNanoTZVector) vector).get(position);
-                zonedDateTime = ZonedDateTime.ofInstant(ofEpochNanos(nanos), ZoneOffset.UTC);
-                precision = 9;
-            }
-            else {
-                throw new UnsupportedOperationException("Unsupported timestamp with time zone vector type: " + vector.getClass());
-            }
-
-            // Format with fixed precision (showing trailing zeros when needed) and UTC zone
-            DateTimeFormatterBuilder builder = new DateTimeFormatterBuilder()
-                    .appendPattern("uuuu-MM-dd HH:mm:ss");
-
-            if (precision > 0) {
-                builder.appendFraction(NANO_OF_SECOND, precision, precision, true);
-            }
-
-            builder.appendLiteral(' ').appendZoneId();
-            DateTimeFormatter formatter = builder.toFormatter();
-
-            return formatter.format(zonedDateTime);
+            return formatter.format(ZonedDateTime.ofInstant(toInstant(vector, position), UTC));
         }
 
         @Override
@@ -828,6 +718,74 @@ public class ArrowDecodingUtils
         {
             vector.close();
         }
+    }
+
+    private static int timePrecision(ValueVector vector)
+    {
+        if (vector instanceof TimeSecVector) {
+            return 0;
+        }
+        if (vector instanceof TimeMilliVector) {
+            return 3;
+        }
+        if (vector instanceof TimeMicroVector) {
+            return 6;
+        }
+        if (vector instanceof TimeNanoVector) {
+            return 9;
+        }
+        throw new IllegalArgumentException("Unsupported time vector type: " + vector.getClass());
+    }
+
+    private static int timestampPrecision(TimeStampVector vector)
+    {
+        if (vector instanceof TimeStampSecVector || vector instanceof TimeStampSecTZVector) {
+            return 0;
+        }
+        if (vector instanceof TimeStampMilliVector || vector instanceof TimeStampMilliTZVector) {
+            return 3;
+        }
+        if (vector instanceof TimeStampMicroVector || vector instanceof TimeStampMicroTZVector) {
+            return 6;
+        }
+        if (vector instanceof TimeStampNanoVector || vector instanceof TimeStampNanoTZVector) {
+            return 9;
+        }
+        throw new IllegalArgumentException("Unsupported timestamp vector type: " + vector.getClass());
+    }
+
+    private static Instant toInstant(TimeStampVector vector, int position)
+    {
+        long value = vector.get(position);
+        switch (timestampPrecision(vector)) {
+            case 0:
+                return Instant.ofEpochSecond(value);
+            case 3:
+                return Instant.ofEpochMilli(value);
+            case 6:
+                return ofEpochMicros(value);
+            default:
+                return ofEpochNanos(value);
+        }
+    }
+
+    // Same formats as the JSON encoding: the fractional second has exactly as many digits as the precision
+    private static DateTimeFormatter timeFormatter(int precision)
+    {
+        return withFraction(new DateTimeFormatterBuilder().appendPattern("HH:mm:ss"), precision);
+    }
+
+    private static DateTimeFormatter timestampFormatter(int precision)
+    {
+        return withFraction(new DateTimeFormatterBuilder().appendPattern("uuuu-MM-dd HH:mm:ss"), precision);
+    }
+
+    private static DateTimeFormatter withFraction(DateTimeFormatterBuilder builder, int precision)
+    {
+        if (precision > 0) {
+            builder.appendFraction(NANO_OF_SECOND, precision, precision, true);
+        }
+        return builder.toFormatter();
     }
 
     private static Instant ofEpochMicros(long epochMicros)
