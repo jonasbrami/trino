@@ -56,10 +56,14 @@ import io.trino.type.IntervalYearMonthType;
 import io.trino.type.JsonType;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.UuidVector;
 import org.apache.arrow.vector.complex.MapVector;
 import org.apache.arrow.vector.complex.StructVector;
+import org.apache.arrow.vector.extension.UuidType;
+import org.apache.arrow.vector.ipc.ArrowStreamReader;
 import org.apache.arrow.vector.types.IntervalUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.ExtensionTypeRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -868,6 +872,49 @@ public class TestArrowEncodingUtils
         assertThat(result).hasSize(2);
         assertThat(result.get(0).get(0)).isEqualTo(uuid1.toString());
         assertThat(result.get(1).get(0)).isEqualTo(uuid2.toString());
+    }
+
+    @Test
+    public void testUuidWithRegisteredExtensionType()
+            throws IOException
+    {
+        // When the arrow.uuid extension type is registered in the JVM, Arrow readers create UuidVector instead of FixedSizeBinaryVector
+        ArrayType arrayType = new ArrayType(UUID);
+        List<TypedColumn> columns = ImmutableList.of(typed("col0", UUID), typed("col1", arrayType));
+        UUID first = new UUID(0x0123456789ABCDEFL, 0xFEDCBA9876543210L);
+        UUID second = new UUID(-1, 0);
+        BlockBuilder uuids = UUID.createBlockBuilder(null, 2);
+        UUID.writeSlice(uuids, Slices.wrappedBuffer(uuidToBytes(first)));
+        uuids.appendNull();
+        ArrayBlockBuilder arrays = arrayType.createBlockBuilder(null, 2);
+        arrays.buildEntry(elements -> {
+            UUID.writeSlice(elements, Slices.wrappedBuffer(uuidToBytes(second)));
+            elements.appendNull();
+        });
+        arrays.appendNull();
+        Page page = page(uuids.build(), arrays.build());
+
+        ExtensionTypeRegistry.register(UuidType.INSTANCE);
+        try {
+            QueryDataEncoder encoder = newEncoder(columns);
+            try {
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                encoder.encodeTo(output, List.of(page));
+                try (ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(output.toByteArray()), allocator)) {
+                    assertThat(reader.getVectorSchemaRoot().getVector(0)).isInstanceOf(UuidVector.class);
+                }
+            }
+            finally {
+                encoder.close();
+            }
+
+            assertThat(roundTrip(columns, page)).containsExactly(
+                    List.of(first.toString(), Arrays.asList(second.toString(), null)),
+                    Arrays.asList(null, null));
+        }
+        finally {
+            ExtensionTypeRegistry.unregister(UuidType.INSTANCE);
+        }
     }
 
     @Test

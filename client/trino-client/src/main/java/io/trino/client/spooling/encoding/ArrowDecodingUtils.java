@@ -24,6 +24,7 @@ import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.DateDayVector;
 import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.DurationVector;
+import org.apache.arrow.vector.ExtensionTypeVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.IntervalMonthDayNanoVector;
@@ -145,8 +146,13 @@ public class ArrowDecodingUtils
         }
     }
 
-    private static VectorTypeDecoder createVectorTypeDecoder(ClientTypeSignature signature, ValueVector vector)
+    private static VectorTypeDecoder createVectorTypeDecoder(ClientTypeSignature signature, ValueVector valueVector)
     {
+        ValueVector vector = valueVector;
+        if (vector instanceof ExtensionTypeVector) {
+            // Extension types registered in the JVM, like arrow.uuid for UUID columns, are read from their storage vector
+            vector = ((ExtensionTypeVector<?>) vector).getUnderlyingVector();
+        }
         switch (signature.getRawType()) {
             case BIGINT:
                 return new BigintDecoder(checkedCast(vector, BigIntVector.class));
