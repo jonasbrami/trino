@@ -53,7 +53,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static org.apache.arrow.vector.types.DateUnit.DAY;
 import static org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE;
 import static org.apache.arrow.vector.types.FloatingPointPrecision.SINGLE;
-import static org.apache.arrow.vector.types.IntervalUnit.YEAR_MONTH;
+import static org.apache.arrow.vector.types.IntervalUnit.MONTH_DAY_NANO;
 import static org.apache.arrow.vector.types.TimeUnit.MICROSECOND;
 import static org.apache.arrow.vector.types.TimeUnit.MILLISECOND;
 import static org.apache.arrow.vector.types.TimeUnit.NANOSECOND;
@@ -158,7 +158,9 @@ public final class TrinoToArrowTypeConverter
             case RowType _ -> new ArrowType.Struct();
             // Day-time intervals with up to microsecond precision are stored as microseconds, longer ones (picoseconds) are not supported
             case IntervalDayTimeType intervalDayTime when intervalDayTime.isShort() -> new ArrowType.Duration(MICROSECOND);
-            case IntervalYearMonthType _ -> new ArrowType.Interval(YEAR_MONTH);
+            // Year-month intervals are stored as a number of months in a month-day-nano interval, which unlike the year-month
+            // interval can be converted by Arrow readers like pyarrow
+            case IntervalYearMonthType _ -> new ArrowType.Interval(MONTH_DAY_NANO);
             case JsonType _ -> new ArrowType.Utf8();
             case UnknownType _ -> new ArrowType.Null();
             default -> throw new UnsupportedOperationException("Unsupported type: " + type);

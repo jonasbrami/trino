@@ -18,6 +18,7 @@ import io.trino.client.ClientTypeSignature;
 import io.trino.client.ClientTypeSignatureParameter;
 import io.trino.client.Column;
 import io.trino.client.Row;
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.DateDayVector;
@@ -25,7 +26,7 @@ import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.DurationVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.FixedSizeBinaryVector;
-import org.apache.arrow.vector.IntervalYearVector;
+import org.apache.arrow.vector.IntervalMonthDayNanoVector;
 import org.apache.arrow.vector.TimeMicroVector;
 import org.apache.arrow.vector.TimeMilliVector;
 import org.apache.arrow.vector.TimeNanoVector;
@@ -67,6 +68,7 @@ import java.util.OptionalInt;
 import java.util.UUID;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
 import static io.trino.client.ClientStandardTypes.ARRAY;
 import static io.trino.client.ClientStandardTypes.BIGINT;
@@ -157,7 +159,7 @@ public class ArrowDecodingUtils
             case INTERVAL_DAY_TO_SECOND:
                 return new IntervalDayTimeDecoder(signature, checkedCast(vector, DurationVector.class));
             case INTERVAL_YEAR_TO_MONTH:
-                return new IntervalYearMonthDecoder(checkedCast(vector, IntervalYearVector.class));
+                return new IntervalYearMonthDecoder(checkedCast(vector, IntervalMonthDayNanoVector.class));
             case TIME:
                 return new TimeDecoder(vector);
             case TIME_WITH_TIME_ZONE:
@@ -554,9 +556,9 @@ public class ArrowDecodingUtils
     private static class IntervalYearMonthDecoder
             implements VectorTypeDecoder
     {
-        private final IntervalYearVector vector;
+        private final IntervalMonthDayNanoVector vector;
 
-        public IntervalYearMonthDecoder(IntervalYearVector vector)
+        public IntervalYearMonthDecoder(IntervalMonthDayNanoVector vector)
         {
             this.vector = requireNonNull(vector, "vector is null");
         }
@@ -568,8 +570,12 @@ public class ArrowDecodingUtils
                 return null;
             }
 
-            // IntervalYearVector stores months directly as int
-            return formatMonths(vector.get(position));
+            // Year-month intervals are encoded as a number of months in a month-day-nano interval
+            ArrowBuf data = vector.getDataBuffer();
+            int days = IntervalMonthDayNanoVector.getDays(data, position);
+            long nanoseconds = IntervalMonthDayNanoVector.getNanoseconds(data, position);
+            checkState(days == 0 && nanoseconds == 0, "Unexpected days or nanoseconds in a year-month interval: %s", vector.getObject(position));
+            return formatMonths(IntervalMonthDayNanoVector.getMonths(data, position));
         }
 
         @Override

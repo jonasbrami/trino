@@ -33,7 +33,7 @@ import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.IntervalYearVector;
+import org.apache.arrow.vector.IntervalMonthDayNanoVector;
 import org.apache.arrow.vector.NullVector;
 import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TimeMicroVector;
@@ -79,7 +79,7 @@ public final class VectorWriters
             case DateDayVector vector -> new DateWriter(vector);
             case DecimalVector vector -> new DecimalWriter(vector, (DecimalType) type);
             case DurationVector vector -> new IntervalDayWriter(vector, (IntervalDayTimeType) type);
-            case IntervalYearVector vector -> new IntervalYearMonthWriter(vector, (IntervalYearMonthType) type);
+            case IntervalMonthDayNanoVector vector -> new IntervalYearMonthWriter(vector, (IntervalYearMonthType) type);
             case FixedSizeBinaryVector vector -> new UuidWriter(vector);
             case TimeSecVector vector -> type instanceof TimeWithTimeZoneType timeWithTimeZoneType ?
                     new TimeWithTimeZoneSecWriter(vector, timeWithTimeZoneType) :
