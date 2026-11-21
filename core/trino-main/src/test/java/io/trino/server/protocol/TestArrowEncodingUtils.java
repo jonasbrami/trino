@@ -18,6 +18,7 @@ import io.airlift.slice.Slices;
 import io.trino.client.CloseableIterator;
 import io.trino.client.Column;
 import io.trino.client.QueryDataDecoder;
+import io.trino.client.Row;
 import io.trino.client.spooling.DataAttributes;
 import io.trino.client.spooling.encoding.ArrowQueryDataDecoder;
 import io.trino.client.spooling.encoding.JsonQueryDataDecoder;
@@ -787,8 +788,9 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
 
-        assertThat(result).containsExactly(
-                List.of(Arrays.asList(1L, "one")));
+        assertThat(result)
+                .containsExactly(List.of(Row.builder().addField("field0", 1L).addField("field1", "one").build()))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -818,9 +820,12 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
 
-        assertThat(result).containsExactly(
-                List.of(Arrays.asList(42L, "hello", true)),
-                List.of(Arrays.asList(123L, "world", false)));
+        // Anonymous fields are unnamed, as with the JSON encoding
+        assertThat(result)
+                .containsExactly(
+                        List.of(Row.builder().addUnnamedField(42L).addUnnamedField("hello").addUnnamedField(true).build()),
+                        List.of(Row.builder().addUnnamedField(123L).addUnnamedField("world").addUnnamedField(false).build()))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -1017,7 +1022,7 @@ public class TestArrowEncodingUtils
                 RowType.field("c", BOOLEAN));
 
         List<TypedColumn> columns = ImmutableList.of(typed("col0", rowType));
-        RowBlockBuilder blockBuilder = rowType.createBlockBuilder(null, 2);
+        RowBlockBuilder blockBuilder = rowType.createBlockBuilder(null, 3);
 
         blockBuilder.buildEntry(builders -> {
             BIGINT.writeLong(builders.get(0), 123L);
@@ -1030,10 +1035,16 @@ public class TestArrowEncodingUtils
             builders.get(1).appendNull();
             builders.get(2).appendNull();
         });
+        blockBuilder.appendNull();
 
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(2);
+        assertThat(result)
+                .containsExactly(
+                        List.of(Row.builder().addField("a", 123L).addField("b", "test").addField("c", true).build()),
+                        List.of(Row.builder().addField("a", null).addField("b", null).addField("c", null).build()),
+                        Arrays.asList((Object) null))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -1072,10 +1083,12 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
 
-        assertThat(result).containsExactly(
-                List.of(Arrays.asList(1001L, "Alice", true)),
-                List.of(Arrays.asList(2002L, "Bob", false)),
-                List.of(Arrays.asList(null, "Charlie", null)));
+        assertThat(result)
+                .containsExactly(
+                        List.of(Row.builder().addField("id", 1001L).addField("name", "Alice").addField("active", true).build()),
+                        List.of(Row.builder().addField("id", 2002L).addField("name", "Bob").addField("active", false).build()),
+                        List.of(Row.builder().addField("id", null).addField("name", "Charlie").addField("active", null).build()))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -1121,9 +1134,17 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
 
-        assertThat(result).containsExactly(
-                List.of(Arrays.asList(Arrays.asList("123 Main St", "Springfield"), 30L)),
-                List.of(Arrays.asList(Arrays.asList("456 Oak Ave", "Riverside"), 25L)));
+        assertThat(result)
+                .containsExactly(
+                        List.of(Row.builder()
+                                .addField("address", Row.builder().addField("street", "123 Main St").addField("city", "Springfield").build())
+                                .addField("age", 30L)
+                                .build()),
+                        List.of(Row.builder()
+                                .addField("address", Row.builder().addField("street", "456 Oak Ave").addField("city", "Riverside").build())
+                                .addField("age", 25L)
+                                .build()))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -1167,8 +1188,11 @@ public class TestArrowEncodingUtils
         Page page = page(blockBuilder.build());
         List<List<Object>> result = roundTrip(columns, page);
 
-        assertThat(result).containsExactly(
-                List.of(Arrays.asList(Arrays.asList(Arrays.asList("John", "Doe"), 35L), true)));
+        Row name = Row.builder().addField("first", "John").addField("last", "Doe").build();
+        Row person = Row.builder().addField("name", name).addField("age", 35L).build();
+        assertThat(result)
+                .containsExactly(List.of(Row.builder().addField("person", person).addField("active", true).build()))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
