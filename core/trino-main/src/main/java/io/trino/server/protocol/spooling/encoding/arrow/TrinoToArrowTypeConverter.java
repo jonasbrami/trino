@@ -45,8 +45,10 @@ import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -86,6 +88,13 @@ public final class TrinoToArrowTypeConverter
                             return toArrowField(fieldName, field.getType(), true);
                         })
                         .collect(toImmutableList());
+                // Arrow struct vectors replace a child with another one of the same name
+                Set<String> names = new HashSet<>();
+                for (Field child : children) {
+                    if (!names.add(child.getName())) {
+                        throw new UnsupportedOperationException("Duplicate row field name: " + child.getName());
+                    }
+                }
                 yield new Field(name, nullableField(ArrowType.Struct.INSTANCE, nullable), children);
             }
             case UuidType _ -> {
