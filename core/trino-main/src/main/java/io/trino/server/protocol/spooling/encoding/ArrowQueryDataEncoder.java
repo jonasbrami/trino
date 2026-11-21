@@ -13,6 +13,7 @@
  */
 package io.trino.server.protocol.spooling.encoding;
 
+import com.google.common.io.CountingOutputStream;
 import com.google.inject.Inject;
 import io.airlift.log.Logger;
 import io.trino.Session;
@@ -23,6 +24,7 @@ import io.trino.server.protocol.spooling.QueryDataEncoder;
 import io.trino.server.protocol.spooling.encoding.arrow.PageWriter;
 import io.trino.server.protocol.spooling.encoding.arrow.TrinoToArrowTypeConverter;
 import io.trino.spi.Page;
+import io.trino.spi.TrinoException;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.compression.CompressionCodec;
@@ -33,6 +35,7 @@ import org.apache.arrow.vector.ipc.message.IpcOption;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.channels.Channels;
@@ -40,6 +43,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Semaphore;
 
+import static com.google.common.base.Throwables.throwIfInstanceOf;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.trino.client.spooling.DataAttribute.SEGMENT_SIZE;
 import static io.trino.server.protocol.spooling.encoding.arrow.TrinoToArrowTypeConverter.toArrowField;
@@ -90,18 +94,33 @@ public class ArrowQueryDataEncoder
             }
             s.acquireUninterruptibly();
         });
-        try {
-            try (VectorSchemaRoot schema = VectorSchemaRoot.create(new Schema(fields), allocator)) {
-                ArrowStreamWriter streamWriter = new ArrowStreamWriter(schema, null, Channels.newChannel(output), IpcOption.DEFAULT, compressionFactory, codecType);
-                try (PageWriter arrowPageWriter = new PageWriter(streamWriter, schema, columns)) {
-                    return DataAttributes.builder()
-                            .set(SEGMENT_SIZE, toIntExact(arrowPageWriter.writePages(pages)))
-                            .build();
-                }
-            }
+        // Closing the output stream is where some spooling storages complete the upload, so it is closed here
+        // and its failure is reported as IOException, which lets the caller fall back to inlining the segment
+        try (CountingOutputStream countingOutput = new CountingOutputStream(output)) {
+            writePages(countingOutput, pages);
+            return DataAttributes.builder()
+                    .set(SEGMENT_SIZE, toIntExact(countingOutput.getCount()))
+                    .build();
+        }
+        catch (Exception e) {
+            throwIfInstanceOf(e, TrinoException.class);
+            throwIfInstanceOf(e, IOException.class);
+            throw new IOException("Could not serialize to Arrow", e);
         }
         finally {
             semaphore.ifPresent(Semaphore::release);
+        }
+    }
+
+    private void writePages(OutputStream output, List<Page> pages)
+            throws IOException
+    {
+        VectorSchemaRoot root = VectorSchemaRoot.create(new Schema(fields), allocator);
+        // The stream writer closes its channel and wraps the failures in a RuntimeException, so the output stream is
+        // shielded from it and closed by the caller instead
+        ArrowStreamWriter streamWriter = new ArrowStreamWriter(root, null, Channels.newChannel(new NonClosingOutputStream(output)), IpcOption.DEFAULT, compressionFactory, codecType);
+        try (PageWriter pageWriter = new PageWriter(streamWriter, root, columns)) {
+            pageWriter.writePages(pages);
         }
     }
 
@@ -119,6 +138,29 @@ public class ArrowQueryDataEncoder
     public void close()
     {
         allocator.close();
+    }
+
+    private static final class NonClosingOutputStream
+            extends FilterOutputStream
+    {
+        public NonClosingOutputStream(OutputStream output)
+        {
+            super(output);
+        }
+
+        @Override
+        public void write(byte[] buffer, int offset, int length)
+                throws IOException
+        {
+            out.write(buffer, offset, length);
+        }
+
+        @Override
+        public void close()
+                throws IOException
+        {
+            flush();
+        }
     }
 
     public static class Factory

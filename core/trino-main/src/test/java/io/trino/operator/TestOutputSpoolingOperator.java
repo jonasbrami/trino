@@ -18,10 +18,12 @@ import io.airlift.slice.Slice;
 import io.trino.Session;
 import io.trino.client.spooling.DataAttributes;
 import io.trino.metadata.SessionPropertyManager;
+import io.trino.server.protocol.OutputColumn;
 import io.trino.server.protocol.spooling.QueryDataEncoder;
 import io.trino.server.protocol.spooling.SpooledMetadataBlock;
 import io.trino.server.protocol.spooling.SpoolingConfig;
 import io.trino.server.protocol.spooling.SpoolingSessionProperties;
+import io.trino.server.protocol.spooling.encoding.ArrowQueryDataEncoder;
 import io.trino.spi.Page;
 import io.trino.spi.spool.SpooledLocation;
 import io.trino.spi.spool.SpooledLocation.DirectLocation;
@@ -29,6 +31,8 @@ import io.trino.spi.spool.SpooledSegmentHandle;
 import io.trino.spi.spool.SpoolingContext;
 import io.trino.spi.spool.SpoolingManager;
 import io.trino.sql.planner.plan.PlanNodeId;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +48,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Function;
 
 import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static io.airlift.slice.Slices.utf8Slice;
@@ -92,6 +97,7 @@ public class TestOutputSpoolingOperator
 
     @Test
     public void testSpoolsWhenStorageIsAvailable()
+            throws Exception
     {
         // The segment is spooled as a single segment when the spooling storage works
         List<SpooledMetadataBlock> segments = process(new TestingSpoolingManager(), largeInput(), true);
@@ -102,6 +108,7 @@ public class TestOutputSpoolingOperator
 
     @Test
     public void testFallbackSplitsLargeSegmentIntoSmallerInlinedSegments()
+            throws Exception
     {
         // When the spooling storage is transiently down, the segment that failed to spool is split into
         // several smaller inlined segments, each below the 2 MB inlining threshold
@@ -113,6 +120,27 @@ public class TestOutputSpoolingOperator
         assertThat(segments).allMatch(segment -> segment.attributes().get(ROWS_COUNT, Long.class) < 235_000); // ~SPOOLING_THRESHOLD of BIGINT values
         // No data is lost: the rows of the failed segment are preserved across the inlined segments
         assertThat(totalRows(segments)).isEqualTo(LARGE_ROW_COUNT);
+    }
+
+    @Test
+    public void testArrowFallbackWhenSegmentUploadFails()
+            throws Exception
+    {
+        // Spooling storages complete the upload of a segment when its output stream is closed, which the Arrow
+        // encoder does itself, so a transient upload failure must surface as an IOException to fall back to inlining
+        try (BufferAllocator allocator = new RootAllocator()) {
+            QueryDataEncoder.Factory arrowFactory = new ArrowQueryDataEncoder.Factory(allocator, Optional.empty());
+            List<OutputColumn> columns = ImmutableList.of(new OutputColumn(0, "col0", BIGINT));
+            List<SpooledMetadataBlock> segments = process(
+                    new UploadFailingSpoolingManager(),
+                    session -> arrowFactory.create(session, columns),
+                    largeInput(),
+                    true);
+
+            assertThat(segments).hasSizeGreaterThan(1);
+            assertThat(segments).allMatch(SpooledMetadataBlock.Inlined.class::isInstance);
+            assertThat(totalRows(segments)).isEqualTo(LARGE_ROW_COUNT);
+        }
     }
 
     @Test
@@ -140,6 +168,13 @@ public class TestOutputSpoolingOperator
     }
 
     private List<SpooledMetadataBlock> process(SpoolingManager spoolingManager, List<Page> input, boolean inliningEnabled)
+            throws Exception
+    {
+        return process(spoolingManager, _ -> rawSizeEncoder(), input, inliningEnabled);
+    }
+
+    private List<SpooledMetadataBlock> process(SpoolingManager spoolingManager, Function<Session, QueryDataEncoder> encoderFactory, List<Page> input, boolean inliningEnabled)
+            throws Exception
     {
         Session session = testSessionBuilder(spoolingSessionPropertyManager())
                 .setSystemProperty(INLINING_ENABLED, Boolean.toString(inliningEnabled))
@@ -152,21 +187,24 @@ public class TestOutputSpoolingOperator
                 .addPipelineContext(0, true, true, false)
                 .addDriverContext();
 
-        OutputSpoolingOperatorFactory factory = new OutputSpoolingOperatorFactory(0, new PlanNodeId("test"), TestOutputSpoolingOperator::rawSizeEncoder, spoolingManager);
-        Operator operator = factory.createOperator(driverContext);
+        OutputSpoolingOperatorFactory factory = new OutputSpoolingOperatorFactory(0, new PlanNodeId("test"), () -> encoderFactory.apply(session), spoolingManager);
+        try (Operator operator = factory.createOperator(driverContext)) {
+            ImmutableList.Builder<SpooledMetadataBlock> segments = ImmutableList.builder();
+            for (Page page : input) {
+                assertThat(operator.needsInput()).isTrue();
+                operator.addInput(page);
+                collect(operator, segments);
+            }
 
-        ImmutableList.Builder<SpooledMetadataBlock> segments = ImmutableList.builder();
-        for (Page page : input) {
-            assertThat(operator.needsInput()).isTrue();
-            operator.addInput(page);
-            collect(operator, segments);
+            operator.finish();
+            while (!operator.isFinished()) {
+                collect(operator, segments);
+            }
+            return segments.build();
         }
-
-        operator.finish();
-        while (!operator.isFinished()) {
-            collect(operator, segments);
+        finally {
+            factory.noMoreOperators();
         }
-        return segments.build();
     }
 
     private static void collect(Operator operator, ImmutableList.Builder<SpooledMetadataBlock> segments)
@@ -282,6 +320,36 @@ public class TestOutputSpoolingOperator
                 throws IOException
         {
             throw new IOException("spooling storage is unavailable");
+        }
+
+        @Override
+        public boolean isRecoverableException(IOException exception)
+        {
+            return true;
+        }
+    }
+
+    private static class UploadFailingSpoolingManager
+            extends TestingSpoolingManager
+    {
+        @Override
+        public OutputStream createOutputStream(SpooledSegmentHandle handle)
+        {
+            return new OutputStream()
+            {
+                @Override
+                public void write(int value) {}
+
+                @Override
+                public void write(byte[] buffer, int offset, int length) {}
+
+                @Override
+                public void close()
+                        throws IOException
+                {
+                    throw new IOException("segment upload failed");
+                }
+            };
         }
 
         @Override

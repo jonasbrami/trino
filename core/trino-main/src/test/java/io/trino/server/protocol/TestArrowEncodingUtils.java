@@ -22,6 +22,7 @@ import io.trino.client.spooling.DataAttributes;
 import io.trino.client.spooling.encoding.ArrowQueryDataDecoder;
 import io.trino.json.JsonItems;
 import io.trino.server.protocol.spooling.QueryDataEncoder;
+import io.trino.server.protocol.spooling.encoding.ArrowCompressionFactory;
 import io.trino.server.protocol.spooling.encoding.ArrowQueryDataEncoder;
 import io.trino.spi.Page;
 import io.trino.spi.block.ArrayBlockBuilder;
@@ -51,6 +52,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -70,6 +72,7 @@ import static io.trino.block.BlockAssertions.createStringsBlock;
 import static io.trino.block.BlockAssertions.createTimestampSequenceBlock;
 import static io.trino.block.BlockAssertions.createTinyintsBlock;
 import static io.trino.block.BlockAssertions.createTypedLongsBlock;
+import static io.trino.client.spooling.DataAttribute.SEGMENT_SIZE;
 import static io.trino.server.protocol.ProtocolUtil.createColumn;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
@@ -111,6 +114,7 @@ import static io.trino.type.IntervalDayTimeType.createIntervalDayTimeType;
 import static io.trino.type.UnknownType.UNKNOWN;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class TestArrowEncodingUtils
 {
@@ -1303,6 +1307,96 @@ public class TestArrowEncodingUtils
                 List.of(1L, "a", true),
                 List.of(2L, "b", false),
                 List.of(3L, "c", true));
+    }
+
+    @Test
+    public void testSegmentSizeMatchesEncodedBytes()
+            throws IOException
+    {
+        List<OutputColumn> columns = ImmutableList.of(new OutputColumn(0, "col0", BIGINT), new OutputColumn(1, "col1", VARCHAR));
+        Page page = page(createTypedLongsBlock(BIGINT, 1L, 2L, 3L), createStringsBlock("a", "b", "c"));
+        List<QueryDataEncoder.Factory> factories = ImmutableList.of(
+                new ArrowQueryDataEncoder.Factory(allocator, Optional.empty()),
+                new ArrowQueryDataEncoder.ZstdFactory(allocator, new ArrowCompressionFactory(), Optional.empty()));
+
+        for (QueryDataEncoder.Factory factory : factories) {
+            for (List<Page> pages : ImmutableList.of(ImmutableList.<Page>of(), ImmutableList.of(page), ImmutableList.of(page, page))) {
+                QueryDataEncoder encoder = factory.create(TEST_SESSION, columns);
+                try {
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    DataAttributes attributes = encoder.encodeTo(output, pages);
+                    // The reported size covers the whole stream, including the end-of-stream marker
+                    assertThat(attributes.get(SEGMENT_SIZE, Integer.class)).isEqualTo(output.size());
+                }
+                finally {
+                    encoder.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void testOutputStreamFailuresAreReportedAsIOException()
+    {
+        List<OutputColumn> columns = ImmutableList.of(new OutputColumn(0, "col0", BIGINT));
+        List<Page> pages = ImmutableList.of(page(createTypedLongsBlock(BIGINT, 1L, 2L, 3L)));
+
+        // Spooling storages complete the upload of a segment when its output stream is closed. Both failures
+        // must surface as IOException for the spooling operator to fall back to inlining the segment.
+        assertEncodingFails(columns, pages, new FailingOutputStream(true, false), "write failed");
+        assertEncodingFails(columns, pages, new FailingOutputStream(false, true), "close failed");
+    }
+
+    private void assertEncodingFails(List<OutputColumn> columns, List<Page> pages, OutputStream output, String expectedMessage)
+    {
+        QueryDataEncoder encoder = createEncoder(columns);
+        try {
+            assertThatThrownBy(() -> encoder.encodeTo(output, pages))
+                    .isInstanceOf(IOException.class)
+                    .hasMessage(expectedMessage);
+        }
+        finally {
+            // Fails if any Arrow buffer was leaked by the failed encoding
+            encoder.close();
+        }
+    }
+
+    private static class FailingOutputStream
+            extends OutputStream
+    {
+        private final boolean failOnWrite;
+        private final boolean failOnClose;
+
+        public FailingOutputStream(boolean failOnWrite, boolean failOnClose)
+        {
+            this.failOnWrite = failOnWrite;
+            this.failOnClose = failOnClose;
+        }
+
+        @Override
+        public void write(int value)
+                throws IOException
+        {
+            write(new byte[] {(byte) value}, 0, 1);
+        }
+
+        @Override
+        public void write(byte[] buffer, int offset, int length)
+                throws IOException
+        {
+            if (failOnWrite) {
+                throw new IOException("write failed");
+            }
+        }
+
+        @Override
+        public void close()
+                throws IOException
+        {
+            if (failOnClose) {
+                throw new IOException("close failed");
+            }
+        }
     }
 
     protected List<List<Object>> roundTrip(List<TypedColumn> columns, Page page)

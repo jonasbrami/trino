@@ -39,7 +39,10 @@ public class PageWriter
         this.columns = ImmutableList.copyOf(requireNonNull(columns, "columns is null"));
     }
 
-    public long writePages(List<Page> pages)
+    /**
+     * Writes the pages as record batches followed by the end-of-stream marker.
+     */
+    public void writePages(List<Page> pages)
             throws IOException
     {
         for (Page page : pages) {
@@ -51,14 +54,15 @@ public class PageWriter
             }
             streamWriter.writeBatch();
         }
-        return streamWriter.bytesWritten();
+        streamWriter.end();
     }
 
     @Override
     public void close()
-            throws IOException
     {
-        streamWriter.close();
-        schema.close();
+        // Release the vectors even if the stream writer fails to close
+        try (schema) {
+            streamWriter.close();
+        }
     }
 }
