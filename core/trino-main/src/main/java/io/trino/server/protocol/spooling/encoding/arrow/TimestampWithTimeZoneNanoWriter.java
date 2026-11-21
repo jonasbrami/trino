@@ -13,13 +13,18 @@
  */
 package io.trino.server.protocol.spooling.encoding.arrow;
 
+import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
 import io.trino.spi.type.LongTimestampWithTimeZone;
 import io.trino.spi.type.TimestampWithTimeZoneType;
 import org.apache.arrow.vector.TimeStampNanoTZVector;
 
+import static io.trino.server.protocol.spooling.encoding.arrow.TimestampNanoWriter.NANOSECOND_RANGE;
+import static io.trino.server.protocol.spooling.encoding.arrow.TimestampNanoWriter.toEpochNanos;
+import static io.trino.spi.StandardErrorCode.NUMERIC_VALUE_OUT_OF_RANGE;
 import static io.trino.spi.type.DateTimeEncoding.unpackMillisUtc;
-import static java.lang.Math.multiplyExact;
+import static io.trino.spi.type.Timestamps.NANOSECONDS_PER_MILLISECOND;
+import static io.trino.spi.type.Timestamps.PICOSECONDS_PER_NANOSECOND;
 
 public final class TimestampWithTimeZoneNanoWriter
         extends FixedWidthWriter<TimeStampNanoTZVector>
@@ -56,12 +61,10 @@ public final class TimestampWithTimeZoneNanoWriter
         }
 
         try {
-            long epochNanos = multiplyExact(epochMillis, 1_000_000L) + (picosOfMilli / 1_000);
-            vector.set(position, epochNanos);
+            vector.set(position, toEpochNanos(epochMillis, NANOSECONDS_PER_MILLISECOND, picosOfMilli / PICOSECONDS_PER_NANOSECOND));
         }
         catch (ArithmeticException e) {
-            // Handle overflow by saturating to max/min values
-            vector.set(position, epochMillis > 0 ? Long.MAX_VALUE : Long.MIN_VALUE);
+            throw new TrinoException(NUMERIC_VALUE_OUT_OF_RANGE, "Timestamp %s is out of range for the Arrow encoding, which supports values between %s".formatted(type.getObjectValue(block, position), NANOSECOND_RANGE), e);
         }
     }
 }

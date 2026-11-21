@@ -28,6 +28,7 @@ import io.trino.server.protocol.spooling.encoding.ArrowCompressionFactory;
 import io.trino.server.protocol.spooling.encoding.ArrowQueryDataEncoder;
 import io.trino.server.protocol.spooling.encoding.JsonQueryDataEncoder;
 import io.trino.spi.Page;
+import io.trino.spi.TrinoException;
 import io.trino.spi.block.ArrayBlockBuilder;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
@@ -94,6 +95,7 @@ import static io.trino.client.spooling.DataAttribute.SEGMENT_SIZE;
 import static io.trino.server.protocol.ProtocolUtil.createColumn;
 import static io.trino.server.protocol.spooling.encoding.arrow.TrinoToArrowTypeConverter.toArrowField;
 import static io.trino.server.protocol.spooling.encoding.arrow.VectorWriters.writerForVector;
+import static io.trino.spi.StandardErrorCode.NUMERIC_VALUE_OUT_OF_RANGE;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.CharType.createCharType;
@@ -115,9 +117,11 @@ import static io.trino.spi.type.TimeType.createTimeType;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MILLIS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_NANOS;
+import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_PICOS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_SECONDS;
 import static io.trino.spi.type.TimeWithTimeZoneType.createTimeWithTimeZoneType;
 import static io.trino.spi.type.TimeZoneKey.UTC_KEY;
+import static io.trino.spi.type.TimeZoneKey.getTimeZoneKey;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MICROS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_NANOS;
@@ -409,31 +413,6 @@ public class TestArrowEncodingUtils
     }
 
     @Test
-    public void testTimePicosSerialization()
-            throws IOException
-    {
-        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIME_PICOS));
-        BlockBuilder blockBuilder = TIME_PICOS.createBlockBuilder(null, 2);
-
-        // Test picosecond precision values that result in meaningful times
-        // 14:30:25.123456789 = (14*3600 + 30*60 + 25) seconds + 123456789 nanoseconds
-        // = 52225 seconds = 52225000000000000 picoseconds + 123456789000 picoseconds = 52225123456789000L
-        TIME_PICOS.writeLong(blockBuilder, 52225123456789000L); // 14:30:25.123456789 -> truncated to 14:30:25.123456789
-        // 09:15:45.987654321 = (9*3600 + 15*60 + 45) seconds + 987654321 nanoseconds
-        // = 33345 seconds = 33345000000000000 picoseconds + 987654321000 picoseconds = 33345987654321000L
-        TIME_PICOS.writeLong(blockBuilder, 33345987654321000L); // 09:15:45.987654321 -> truncated to 09:15:45.987654321
-
-        Page page = page(blockBuilder.build());
-        List<List<Object>> result = roundTrip(columns, page);
-
-        // Arrow supports nanosecond precision max, so picoseconds get truncated to nanoseconds
-        // The decoder returns strings for TIME types
-        assertThat(result).containsExactly(
-                List.of("14:30:25.123456789"), // 52225123456789000 picoseconds -> 52225123456789 nanoseconds -> 14:30:25.123456789
-                List.of("09:15:45.987654321")); // 33345987654321000 picoseconds -> 33345987654321 nanoseconds -> 09:15:45.987654321
-    }
-
-    @Test
     public void testTimeWithTimeZoneMillisSerialization()
             throws IOException
     {
@@ -567,20 +546,20 @@ public class TestArrowEncodingUtils
         BlockBuilder blockBuilder = TIMESTAMP_TZ_NANOS.createBlockBuilder(null, 2);
 
         // Create LongTimestampWithTimeZone objects (epochMillis, picosOfMilli, timeZoneKey)
-        // UTC timezone (key = 0)
         LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
-                1234567890123L, 456_000, (short) 0); // 456,000 picoseconds = 456 nanoseconds within the millisecond, UTC
+                1234567890123L, 456_000, UTC_KEY); // 456,000 picoseconds = 456 nanoseconds within the millisecond, UTC
 
-        // +1 hour timezone (key = 60 minutes offset)
         LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
-                9876543210987L, 789_000, (short) 60); // 789,000 picoseconds = 789 nanoseconds within the millisecond, +1 hour
+                1876543210987L, 789_000, getTimeZoneKey("Europe/Paris")); // 789,000 picoseconds = 789 nanoseconds within the millisecond
 
         TIMESTAMP_TZ_NANOS.writeObject(blockBuilder, timestamp1);
         TIMESTAMP_TZ_NANOS.writeObject(blockBuilder, timestamp2);
         Page page = page(blockBuilder.build());
 
-        List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(2);
+        // Values are converted to UTC, as Arrow timestamps of a vector have a single time zone
+        assertThat(roundTrip(columns, page)).containsExactly(
+                List.of("2009-02-13 23:31:30.123000456 UTC"),
+                List.of("2029-06-19 06:00:10.987000789 UTC"));
     }
 
     @Test
@@ -598,49 +577,58 @@ public class TestArrowEncodingUtils
     }
 
     @Test
-    public void testTimestampPicosSerialization()
-            throws IOException
+    public void testUnsupportedPicosecondDateTime()
     {
-        // Picosecond timestamps should be automatically cast to nanosecond precision for Arrow compatibility
-        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_PICOS));
-        BlockBuilder blockBuilder = TIMESTAMP_PICOS.createBlockBuilder(null, 2);
+        // Arrow time units stop at nanoseconds, picosecond values are not truncated
+        List<OutputColumn> columns = ImmutableList.of(
+                new OutputColumn(0, "time", TIME_NANOS),
+                new OutputColumn(1, "time_picos", TIME_PICOS),
+                new OutputColumn(2, "time_tz_picos", TIME_TZ_PICOS),
+                new OutputColumn(3, "timestamp_picos", TIMESTAMP_PICOS),
+                new OutputColumn(4, "timestamp_tz_picos", TIMESTAMP_TZ_PICOS),
+                new OutputColumn(5, "nested", new ArrayType(TIMESTAMP_PICOS)));
 
-        // Create LongTimestamp objects with picosecond precision
-        LongTimestamp timestamp1 = new LongTimestamp(1234567890123456L, 789123); // 789,123 picoseconds
-        LongTimestamp timestamp2 = new LongTimestamp(9876543210987654L, 456789); // 456,789 picoseconds
-
-        TIMESTAMP_PICOS.writeObject(blockBuilder, timestamp1);
-        TIMESTAMP_PICOS.writeObject(blockBuilder, timestamp2);
-        Page page = page(blockBuilder.build());
-
-        // Should successfully round-trip, with picoseconds truncated to nanoseconds
-        List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(2);
-        // Note: Precision loss expected - picoseconds are truncated to nanoseconds
+        assertThat(new ArrowQueryDataEncoder.Factory(allocator, Optional.empty()).unsupported(columns))
+                .extracting(OutputColumn::columnName)
+                .containsExactly("time_picos", "time_tz_picos", "timestamp_picos", "timestamp_tz_picos", "nested");
     }
 
     @Test
-    public void testTimestampWithTimeZonePicosSerialization()
+    public void testTimestampOutOfNanosecondRange()
             throws IOException
     {
-        // Picosecond timestamps with timezone should be automatically cast to nanosecond precision for Arrow compatibility
-        List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_PICOS));
-        BlockBuilder blockBuilder = TIMESTAMP_TZ_PICOS.createBlockBuilder(null, 2);
+        // The smallest and largest values are representable, values out of the range of nanoseconds since the epoch are not
+        BlockBuilder timestamp = TIMESTAMP_NANOS.createBlockBuilder(null, 2);
+        TIMESTAMP_NANOS.writeObject(timestamp, new LongTimestamp(-9_223_372_036_854_776L, 192_000));
+        TIMESTAMP_NANOS.writeObject(timestamp, new LongTimestamp(9_223_372_036_854_775L, 807_000));
+        BlockBuilder timestampWithTimeZone = TIMESTAMP_TZ_NANOS.createBlockBuilder(null, 2);
+        TIMESTAMP_TZ_NANOS.writeObject(timestampWithTimeZone, LongTimestampWithTimeZone.fromEpochMillisAndFraction(-9_223_372_036_855L, 224_192_000, UTC_KEY));
+        TIMESTAMP_TZ_NANOS.writeObject(timestampWithTimeZone, LongTimestampWithTimeZone.fromEpochMillisAndFraction(9_223_372_036_854L, 775_807_000, UTC_KEY));
+        List<TypedColumn> columns = ImmutableList.of(typed("timestamp", TIMESTAMP_NANOS), typed("timestamp_tz", TIMESTAMP_TZ_NANOS));
+        assertThat(roundTrip(columns, page(timestamp.build(), timestampWithTimeZone.build()))).containsExactly(
+                List.of("1677-09-21 00:12:43.145224192", "1677-09-21 00:12:43.145224192 UTC"),
+                List.of("2262-04-11 23:47:16.854775807", "2262-04-11 23:47:16.854775807 UTC"));
 
-        // Create LongTimestampWithTimeZone objects with picosecond precision
-        LongTimestampWithTimeZone timestamp1 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
-                1234567890123L, 789123, (short) 0); // 789,123 picoseconds, UTC
-        LongTimestampWithTimeZone timestamp2 = LongTimestampWithTimeZone.fromEpochMillisAndFraction(
-                9876543210987L, 456789, (short) 60); // 456,789 picoseconds, +1 hour
+        BlockBuilder beforeRange = TIMESTAMP_NANOS.createBlockBuilder(null, 1);
+        TIMESTAMP_NANOS.writeObject(beforeRange, new LongTimestamp(-9_223_372_036_854_776L, 191_000));
+        assertOutOfRange(typed("col0", TIMESTAMP_NANOS), beforeRange.build(), "Timestamp 1677-09-21 00:12:43.145224191 is out of range for the Arrow encoding");
 
-        TIMESTAMP_TZ_PICOS.writeObject(blockBuilder, timestamp1);
-        TIMESTAMP_TZ_PICOS.writeObject(blockBuilder, timestamp2);
-        Page page = page(blockBuilder.build());
+        BlockBuilder afterRange = TIMESTAMP_NANOS.createBlockBuilder(null, 1);
+        TIMESTAMP_NANOS.writeObject(afterRange, new LongTimestamp(9_223_372_036_854_775L, 808_000));
+        assertOutOfRange(typed("col0", TIMESTAMP_NANOS), afterRange.build(), "Timestamp 2262-04-11 23:47:16.854775808 is out of range for the Arrow encoding");
 
-        // Should successfully round-trip, with picoseconds truncated to nanoseconds
-        List<List<Object>> result = roundTrip(columns, page);
-        assertThat(result).hasSize(2);
-        // Note: Precision loss expected - picoseconds are truncated to nanoseconds
+        BlockBuilder farRange = TIMESTAMP_TZ_NANOS.createBlockBuilder(null, 1);
+        TIMESTAMP_TZ_NANOS.writeObject(farRange, LongTimestampWithTimeZone.fromEpochMillisAndFraction(253_402_300_799_999L, 999_999_000, UTC_KEY));
+        assertOutOfRange(typed("col0", TIMESTAMP_TZ_NANOS), farRange.build(), "Timestamp 9999-12-31 23:59:59.999999999 UTC is out of range for the Arrow encoding");
+    }
+
+    private void assertOutOfRange(TypedColumn column, Block block, String expectedMessage)
+    {
+        assertThatThrownBy(() -> roundTrip(ImmutableList.of(column), page(block)))
+                .isInstanceOf(TrinoException.class)
+                .hasMessageStartingWith(expectedMessage)
+                .extracting(exception -> ((TrinoException) exception).getErrorCode())
+                .isEqualTo(NUMERIC_VALUE_OUT_OF_RANGE.toErrorCode());
     }
 
     @Test
@@ -739,7 +727,7 @@ public class TestArrowEncodingUtils
         long[] picosOfDay = {0, 3_723_400_000_000_000L, 45_296_123_456_789_000L, 86_399_999_999_999_000L};
         long[] epochMicros = {0, -1, 1_234_567_890_123_456L, -62_135_596_800_000_000L, 253_402_300_799_999_999L};
         // Nanosecond values are limited to the range of nanoseconds since the epoch
-        long[] nanosecondEpochMicros = {0, -1, 1_234_567_890_123_456L, -9_223_372_036_000_000L, 9_223_372_036_854_775L};
+        long[] nanosecondEpochMicros = {0, -1, 1_234_567_890_123_456L, -9_223_372_036_854_775L, 9_223_372_036_854_775L};
         ImmutableList.Builder<TypedColumn> columns = ImmutableList.builder();
         ImmutableList.Builder<Block> blocks = ImmutableList.builder();
         for (int precision : new int[] {0, 3, 6, 9}) {
