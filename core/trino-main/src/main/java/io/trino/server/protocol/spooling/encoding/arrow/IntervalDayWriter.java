@@ -15,18 +15,21 @@ package io.trino.server.protocol.spooling.encoding.arrow;
 
 import io.trino.spi.block.Block;
 import io.trino.type.IntervalDayTimeType;
-import org.apache.arrow.vector.IntervalDayVector;
+import org.apache.arrow.vector.DurationVector;
 
-import static java.lang.Math.toIntExact;
+import static com.google.common.base.Preconditions.checkArgument;
+import static java.util.Objects.requireNonNull;
 
 public final class IntervalDayWriter
-        extends FixedWidthWriter<IntervalDayVector>
+        extends FixedWidthWriter<DurationVector>
 {
-    private static final int MILLIS_IN_DAY = 24 * 60 * 60 * 1000;
+    private final IntervalDayTimeType type;
 
-    public IntervalDayWriter(IntervalDayVector vector)
+    public IntervalDayWriter(DurationVector vector, IntervalDayTimeType type)
     {
         super(vector);
+        this.type = requireNonNull(type, "type is null");
+        checkArgument(type.isShort(), "Only day-time intervals with fractional precision up to microseconds are supported: %s", type);
     }
 
     @Override
@@ -38,9 +41,7 @@ public final class IntervalDayWriter
     @Override
     protected void writeValue(Block block, int position)
     {
-        long intervalDayTime = IntervalDayTimeType.INTERVAL_DAY_TIME.getLong(block, position);
-        int days = toIntExact(intervalDayTime / MILLIS_IN_DAY);
-        int millis = toIntExact((intervalDayTime % MILLIS_IN_DAY));
-        vector.set(position, days, millis);
+        // Short day-time intervals are stored as a number of microseconds
+        vector.set(position, type.getLong(block, position));
     }
 }

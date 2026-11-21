@@ -53,8 +53,33 @@ public class ArrowQueryDataDecoder
             throws IOException
     {
         BufferAllocator allocator = ROOT_ALLOCATOR.newChildAllocator(randomUUID().toString(), 0, Integer.MAX_VALUE);
-        ArrowStreamReader streamReader = new ArrowStreamReader(input, allocator, new AirliftCompressionCodecFactory());
-        return new ArrowRowIterator(allocator, streamReader, columns);
+        try {
+            ArrowStreamReader streamReader = new ArrowStreamReader(input, allocator, new AirliftCompressionCodecFactory());
+            try {
+                return new ArrowRowIterator(allocator, streamReader, columns);
+            }
+            catch (Throwable e) {
+                // Release the buffers read so far if the segment cannot be decoded
+                closeSuppressing(streamReader, e);
+                throw e;
+            }
+        }
+        catch (Throwable e) {
+            closeSuppressing(allocator, e);
+            throw e;
+        }
+    }
+
+    private static void closeSuppressing(AutoCloseable closeable, Throwable failure)
+    {
+        try {
+            closeable.close();
+        }
+        catch (Exception e) {
+            if (e != failure) {
+                failure.addSuppressed(e);
+            }
+        }
     }
 
     public static class ArrowRowIterator
@@ -125,21 +150,25 @@ public class ArrowQueryDataDecoder
         public void close()
                 throws IOException
         {
-            clearVectors();
-            reader.close();
-            allocator.close();
+            // Resources are closed in reverse order: the decoded vectors, then the reader and finally the allocator
+            try (allocator; reader) {
+                clearVectors();
+            }
         }
 
         private void clearVectors()
         {
-            if (currentVectorDecoders != null) {
-                for (VectorTypeDecoder vectorDecoder : currentVectorDecoders) {
-                    try {
-                        vectorDecoder.close();
-                    }
-                    catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
+            if (currentVectorDecoders == null) {
+                return;
+            }
+            VectorTypeDecoder[] decoders = currentVectorDecoders;
+            currentVectorDecoders = null;
+            for (VectorTypeDecoder vectorDecoder : decoders) {
+                try {
+                    vectorDecoder.close();
+                }
+                catch (IOException e) {
+                    throw new UncheckedIOException(e);
                 }
             }
         }

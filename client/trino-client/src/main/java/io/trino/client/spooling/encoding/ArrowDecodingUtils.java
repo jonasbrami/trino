@@ -21,9 +21,9 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.DateDayVector;
 import org.apache.arrow.vector.DecimalVector;
+import org.apache.arrow.vector.DurationVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.FixedSizeBinaryVector;
-import org.apache.arrow.vector.IntervalDayVector;
 import org.apache.arrow.vector.IntervalYearVector;
 import org.apache.arrow.vector.TimeMicroVector;
 import org.apache.arrow.vector.TimeMilliVector;
@@ -62,6 +62,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.UUID;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -88,19 +89,20 @@ import static io.trino.client.ClientStandardTypes.TIME_WITH_TIME_ZONE;
 import static io.trino.client.ClientStandardTypes.TINYINT;
 import static io.trino.client.ClientStandardTypes.UUID;
 import static io.trino.client.ClientStandardTypes.VARCHAR;
+import static io.trino.client.IntervalDayTime.formatMicros;
 import static io.trino.client.IntervalDayTime.formatMillis;
+import static io.trino.client.IntervalYearMonth.formatMonths;
+import static java.lang.Math.floorDiv;
+import static java.lang.Math.floorMod;
 import static java.time.temporal.ChronoField.NANO_OF_SECOND;
-import static java.util.Collections.emptyList;
-import static java.util.Collections.emptyMap;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Objects.requireNonNull;
+import static org.apache.arrow.vector.types.TimeUnit.MICROSECOND;
 
 public class ArrowDecodingUtils
 {
-    private ArrowDecodingUtils()
-    {
-    }
+    private ArrowDecodingUtils() {}
 
     public static VectorTypeDecoder[] createVectorTypeDecoders(List<Column> columns, BufferAllocator allocator, List<FieldVector> vectors)
     {
@@ -148,7 +150,7 @@ public class ArrowDecodingUtils
             case DECIMAL:
                 return new DecimalDecoder(checkedCast(vector, DecimalVector.class));
             case INTERVAL_DAY_TO_SECOND:
-                return new IntervalDayTimeDecoder(checkedCast(vector, IntervalDayVector.class));
+                return new IntervalDayTimeDecoder(signature, checkedCast(vector, DurationVector.class));
             case INTERVAL_YEAR_TO_MONTH:
                 return new IntervalYearMonthDecoder(checkedCast(vector, IntervalYearVector.class));
             case TIME:
@@ -255,7 +257,7 @@ public class ArrowDecodingUtils
             }
 
             if (vector.isEmpty(position)) {
-                return emptyMap();
+                return Map.of();
             }
 
             Map<Object, Object> values = new HashMap<>();
@@ -297,7 +299,7 @@ public class ArrowDecodingUtils
             }
 
             if (vector.isEmpty(position)) {
-                return emptyList();
+                return List.of();
             }
 
             List<Object> values = new ArrayList<>();
@@ -493,11 +495,18 @@ public class ArrowDecodingUtils
     private static class IntervalDayTimeDecoder
             implements VectorTypeDecoder
     {
-        private final IntervalDayVector vector;
+        private static final long MICROS_PER_MILLI = 1000;
 
-        public IntervalDayTimeDecoder(IntervalDayVector vector)
+        private final DurationVector vector;
+        // Empty when the client does not support parametric intervals, the value is then rendered in the legacy millisecond form
+        private final OptionalInt fractionalPrecision;
+
+        public IntervalDayTimeDecoder(ClientTypeSignature signature, DurationVector vector)
         {
+            requireNonNull(signature, "signature is null");
             this.vector = requireNonNull(vector, "vector is null");
+            checkArgument(vector.getUnit() == MICROSECOND, "Expected interval encoded as microseconds, but got %s", vector.getUnit());
+            this.fractionalPrecision = intervalFractionalPrecision(signature);
         }
 
         @Override
@@ -507,14 +516,35 @@ public class ArrowDecodingUtils
                 return null;
             }
 
-            Duration duration = vector.getObject(position);
-            return formatMillis(duration.toNanos() / 1_000_000);
+            long micros = DurationVector.get(vector.getDataBuffer(), position);
+            if (fractionalPrecision.isPresent()) {
+                return formatMicros(micros, fractionalPrecision.orElseThrow());
+            }
+            // Same rounding as the legacy wire format of the JSON encoding: half up, ties toward positive infinity
+            long millis = floorDiv(micros, MICROS_PER_MILLI);
+            if (floorMod(micros, MICROS_PER_MILLI) >= MICROS_PER_MILLI / 2) {
+                millis++;
+            }
+            return formatMillis(millis);
         }
 
         @Override
         public void close()
         {
             vector.close();
+        }
+
+        private static OptionalInt intervalFractionalPrecision(ClientTypeSignature signature)
+        {
+            List<ClientTypeSignatureParameter> arguments = signature.getArguments();
+            if (arguments.isEmpty()) {
+                return OptionalInt.empty();
+            }
+            // Parametric interval: start field, end field, leading precision and fractional-seconds precision
+            if (arguments.size() < 4) {
+                return OptionalInt.of(0);
+            }
+            return OptionalInt.of(arguments.get(3).getLongLiteral().intValue());
         }
     }
 
@@ -536,20 +566,7 @@ public class ArrowDecodingUtils
             }
 
             // IntervalYearVector stores months directly as int
-            int months = vector.get(position);
-
-            // Handle negative intervals properly
-            if (months < 0) {
-                int absoluteMonths = Math.abs(months);
-                int years = absoluteMonths / 12;
-                int remainingMonths = absoluteMonths % 12;
-                return String.format("-%d-%d", years, remainingMonths);
-            }
-            else {
-                int years = months / 12;
-                int remainingMonths = months % 12;
-                return String.format("%d-%d", years, remainingMonths);
-            }
+            return formatMonths(vector.get(position));
         }
 
         @Override

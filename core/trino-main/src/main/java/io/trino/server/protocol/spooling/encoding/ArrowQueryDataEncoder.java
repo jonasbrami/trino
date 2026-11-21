@@ -83,8 +83,10 @@ public class ArrowQueryDataEncoder
     {
         semaphore.ifPresent(s -> {
             if (s.hasQueuedThreads()) {
-                log.debug("Arrow serialization backpressure: %d threads waiting, %d permits available",
-                        s.getQueueLength(), s.availablePermits());
+                log.debug(
+                        "Arrow serialization backpressure: %d threads waiting, %d permits available",
+                        s.getQueueLength(),
+                        s.availablePermits());
             }
             s.acquireUninterruptibly();
         });
