@@ -16,6 +16,7 @@ package io.trino.client.spooling.encoding;
 import com.google.common.collect.ImmutableList;
 import io.trino.client.ClientTypeSignature;
 import io.trino.client.ClientTypeSignatureParameter;
+import io.trino.client.ClientTypeSignatureParameter.ParameterKind;
 import io.trino.client.Column;
 import io.trino.client.Row;
 import org.apache.arrow.memory.ArrowBuf;
@@ -271,6 +272,8 @@ public class ArrowDecodingUtils
         private final VectorTypeDecoder keyDecoder;
         private final VectorTypeDecoder valueDecoder;
         private final MapVector vector;
+        // Day-time interval keys rounded to milliseconds for clients without parametric intervals may collide
+        private final boolean legacyIntervalKeys;
 
         public MapDecoder(ClientTypeSignature signature, MapVector vector)
         {
@@ -279,8 +282,10 @@ public class ArrowDecodingUtils
             StructVector structVector = (StructVector) vector.getDataVector();
 
             checkArgument(signature.getRawType().equals(MAP), "not a map type signature: %s", signature);
-            this.keyDecoder = createVectorTypeDecoder(signature.getArgumentsAsTypeSignatures().get(0), structVector.getChild("key"));
+            ClientTypeSignature keySignature = signature.getArgumentsAsTypeSignatures().get(0);
+            this.keyDecoder = createVectorTypeDecoder(keySignature, structVector.getChild("key"));
             this.valueDecoder = createVectorTypeDecoder(signature.getArgumentsAsTypeSignatures().get(1), structVector.getChild("value"));
+            this.legacyIntervalKeys = containsLegacyDayTimeInterval(keySignature);
         }
 
         @Override
@@ -296,9 +301,29 @@ public class ArrowDecodingUtils
 
             Map<Object, Object> values = new HashMap<>();
             for (int i = vector.getElementStartIndex(position); i < vector.getElementEndIndex(position); i++) {
-                values.put(keyDecoder.decode(i), valueDecoder.decode(i));
+                Object key = keyDecoder.decode(i);
+                if (legacyIntervalKeys && values.containsKey(key)) {
+                    // Fail like the JSON encoding rather than silently dropping entries
+                    throw new IllegalStateException("Interval map keys collide at millisecond precision; use a client supporting PARAMETRIC_INTERVAL");
+                }
+                values.put(key, valueDecoder.decode(i));
             }
             return unmodifiableMap(values);
+        }
+
+        private static boolean containsLegacyDayTimeInterval(ClientTypeSignature signature)
+        {
+            if (signature.getRawType().equals(INTERVAL_DAY_TO_SECOND) && signature.getArguments().isEmpty()) {
+                return true;
+            }
+            for (ClientTypeSignatureParameter parameter : signature.getArguments()) {
+                if (parameter.getKind() == ParameterKind.TYPE || parameter.getKind() == ParameterKind.NAMED_TYPE) {
+                    if (containsLegacyDayTimeInterval(parameter.getTypeSignature())) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         @Override
