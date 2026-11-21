@@ -1574,6 +1574,48 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testLegacyIntervalMapKeys()
+            throws IOException
+    {
+        for (Type keyType : ImmutableList.of(INTERVAL_DAY_TIME, new ArrayType(INTERVAL_DAY_TIME), RowType.anonymous(ImmutableList.of(INTERVAL_DAY_TIME)))) {
+            MapType mapType = new MapType(keyType, BIGINT, new TypeOperators());
+            List<TypedColumn> columns = ImmutableList.of(typed("col0", mapType));
+
+            Page distinct = page(intervalKeyMap(mapType, 1_500_000L, 1_600_000L));
+            assertThat(roundTrip(columns, distinct, false)).hasSize(1);
+            assertThat((Map<?, ?>) roundTrip(columns, distinct, false).getFirst().getFirst()).hasSize(2);
+
+            // Keys that only differ below a millisecond collide when rounded for clients without parametric intervals, which
+            // fails like with the JSON encoding rather than silently dropping entries
+            Page colliding = page(intervalKeyMap(mapType, 1_500_000L, 1_500_400L));
+            assertThat((Map<?, ?>) roundTrip(columns, colliding).getFirst().getFirst()).hasSize(2);
+            assertThatThrownBy(() -> roundTrip(columns, colliding, false))
+                    .hasMessage("Interval map keys collide at millisecond precision; use a client supporting PARAMETRIC_INTERVAL");
+        }
+    }
+
+    private static Block intervalKeyMap(MapType mapType, long firstKeyMicros, long secondKeyMicros)
+    {
+        MapBlockBuilder blockBuilder = mapType.createBlockBuilder(null, 1);
+        blockBuilder.buildEntry((keyBuilder, valueBuilder) -> {
+            writeIntervalKey(keyBuilder, firstKeyMicros);
+            BIGINT.writeLong(valueBuilder, 1L);
+            writeIntervalKey(keyBuilder, secondKeyMicros);
+            BIGINT.writeLong(valueBuilder, 2L);
+        });
+        return blockBuilder.build();
+    }
+
+    private static void writeIntervalKey(BlockBuilder builder, long micros)
+    {
+        switch (builder) {
+            case ArrayBlockBuilder array -> array.buildEntry(elements -> INTERVAL_DAY_TIME.writeLong(elements, micros));
+            case RowBlockBuilder row -> row.buildEntry(fields -> INTERVAL_DAY_TIME.writeLong(fields.getFirst(), micros));
+            default -> INTERVAL_DAY_TIME.writeLong(builder, micros);
+        }
+    }
+
+    @Test
     public void testUnsupportedPicosecondIntervalDayTime()
     {
         IntervalDayTimeType picosecondInterval = createIntervalDayTimeType(DAY, SECOND, 9, 12);
