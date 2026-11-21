@@ -37,10 +37,17 @@ import io.trino.spi.block.RowBlockBuilder;
 import io.trino.spi.block.RunLengthEncodedBlock;
 import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.CharType;
+import io.trino.spi.type.DateTimeEncoding;
+import io.trino.spi.type.DecimalType;
+import io.trino.spi.type.Int128;
 import io.trino.spi.type.LongTimestamp;
 import io.trino.spi.type.LongTimestampWithTimeZone;
 import io.trino.spi.type.MapType;
 import io.trino.spi.type.RowType;
+import io.trino.spi.type.TimeType;
+import io.trino.spi.type.TimeWithTimeZoneType;
+import io.trino.spi.type.TimestampType;
+import io.trino.spi.type.TimestampWithTimeZoneType;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeOperators;
 import io.trino.type.IntervalDayTimeType;
@@ -61,6 +68,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -103,21 +111,25 @@ import static io.trino.spi.type.TimeType.TIME_MILLIS;
 import static io.trino.spi.type.TimeType.TIME_NANOS;
 import static io.trino.spi.type.TimeType.TIME_PICOS;
 import static io.trino.spi.type.TimeType.TIME_SECONDS;
+import static io.trino.spi.type.TimeType.createTimeType;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MICROS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_MILLIS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_NANOS;
 import static io.trino.spi.type.TimeWithTimeZoneType.TIME_TZ_SECONDS;
+import static io.trino.spi.type.TimeWithTimeZoneType.createTimeWithTimeZoneType;
 import static io.trino.spi.type.TimeZoneKey.UTC_KEY;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MICROS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_MILLIS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_NANOS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_PICOS;
 import static io.trino.spi.type.TimestampType.TIMESTAMP_SECONDS;
+import static io.trino.spi.type.TimestampType.createTimestampType;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MICROS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_MILLIS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_NANOS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_PICOS;
 import static io.trino.spi.type.TimestampWithTimeZoneType.TIMESTAMP_TZ_SECONDS;
+import static io.trino.spi.type.TimestampWithTimeZoneType.createTimestampWithTimeZoneType;
 import static io.trino.spi.type.TinyintType.TINYINT;
 import static io.trino.spi.type.UuidType.UUID;
 import static io.trino.spi.type.VarbinaryType.VARBINARY;
@@ -689,12 +701,15 @@ public class TestArrowEncodingUtils
         TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, LongTimestampWithTimeZone.fromEpochMillisAndFraction(-1, 999_000_000, UTC_KEY));
         TIMESTAMP_TZ_MICROS.writeObject(blockBuilder, LongTimestampWithTimeZone.fromEpochMillisAndFraction(253_402_300_799_999L, 999_000_000, UTC_KEY));
         List<TypedColumn> columns = ImmutableList.of(typed("col0", TIMESTAMP_TZ_MICROS));
+        Page page = page(blockBuilder.build());
 
-        assertThat(roundTrip(columns, page(blockBuilder.build()))).containsExactly(
-                List.of("0001-01-01 00:00:00.000000 Z"),
-                List.of("1600-01-01 00:00:00.123456 Z"),
-                List.of("1969-12-31 23:59:59.999999 Z"),
-                List.of("9999-12-31 23:59:59.999999 Z"));
+        assertThat(roundTrip(columns, page))
+                .containsExactly(
+                        List.of("0001-01-01 00:00:00.000000 UTC"),
+                        List.of("1600-01-01 00:00:00.123456 UTC"),
+                        List.of("1969-12-31 23:59:59.999999 UTC"),
+                        List.of("9999-12-31 23:59:59.999999 UTC"))
+                .isEqualTo(jsonRoundTrip(columns, page));
     }
 
     @Test
@@ -713,6 +728,132 @@ public class TestArrowEncodingUtils
                         List.of("1677-09-21 00:12:43.145224192"),
                         List.of("1969-12-31 23:59:59.999999001"),
                         List.of("2262-04-11 23:47:16.854775807"))
+                .isEqualTo(jsonRoundTrip(columns, page));
+    }
+
+    @Test
+    public void testDateTimeTextMatchesJsonEncoding()
+            throws IOException
+    {
+        // The Arrow decoder renders values exactly like the JSON encoding, the time zone of values in UTC included
+        long[] picosOfDay = {0, 3_723_400_000_000_000L, 45_296_123_456_789_000L, 86_399_999_999_999_000L};
+        long[] epochMicros = {0, -1, 1_234_567_890_123_456L, -62_135_596_800_000_000L, 253_402_300_799_999_999L};
+        // Nanosecond values are limited to the range of nanoseconds since the epoch
+        long[] nanosecondEpochMicros = {0, -1, 1_234_567_890_123_456L, -9_223_372_036_000_000L, 9_223_372_036_854_775L};
+        ImmutableList.Builder<TypedColumn> columns = ImmutableList.builder();
+        ImmutableList.Builder<Block> blocks = ImmutableList.builder();
+        for (int precision : new int[] {0, 3, 6, 9}) {
+            long picosFactor = (long) Math.pow(10, 12 - precision);
+
+            TimeType timeType = createTimeType(precision);
+            BlockBuilder time = timeType.createBlockBuilder(null, 5);
+            TimeWithTimeZoneType timeWithTimeZoneType = createTimeWithTimeZoneType(precision);
+            BlockBuilder timeWithTimeZone = timeWithTimeZoneType.createBlockBuilder(null, 5);
+            for (int i = 0; i < 5; i++) {
+                long picos = picosOfDay[i % picosOfDay.length] / picosFactor * picosFactor;
+                timeType.writeLong(time, picos);
+                timeWithTimeZoneType.writeLong(timeWithTimeZone, DateTimeEncoding.packTimeWithTimeZone(picos / 1000, 0));
+            }
+
+            TimestampType timestampType = createTimestampType(precision);
+            BlockBuilder timestamp = timestampType.createBlockBuilder(null, 5);
+            TimestampWithTimeZoneType timestampWithTimeZoneType = createTimestampWithTimeZoneType(precision);
+            BlockBuilder timestampWithTimeZone = timestampWithTimeZoneType.createBlockBuilder(null, 5);
+            for (int i = 0; i < 5; i++) {
+                long micros = epochMicros[i];
+                // Nanosecond values get sub-microsecond digits, and values are truncated to the precision
+                int picosOfMicro = 0;
+                if (precision > 6) {
+                    micros = nanosecondEpochMicros[i];
+                    picosOfMicro = i * 123_000;
+                }
+                else {
+                    long microsFactor = picosFactor / 1_000_000L;
+                    micros = Math.floorDiv(micros, microsFactor) * microsFactor;
+                }
+                if (timestampType.isShort()) {
+                    timestampType.writeLong(timestamp, micros);
+                }
+                else {
+                    timestampType.writeObject(timestamp, new LongTimestamp(micros, picosOfMicro));
+                }
+                long millis = Math.floorDiv(micros, 1000L);
+                int picosOfMilli = (int) (Math.floorMod(micros, 1000L) * 1_000_000L + picosOfMicro);
+                if (timestampWithTimeZoneType.isShort()) {
+                    timestampWithTimeZoneType.writeLong(timestampWithTimeZone, DateTimeEncoding.packDateTimeWithZone(millis, UTC_KEY));
+                }
+                else {
+                    timestampWithTimeZoneType.writeObject(timestampWithTimeZone, LongTimestampWithTimeZone.fromEpochMillisAndFraction(millis, picosOfMilli, UTC_KEY));
+                }
+            }
+
+            columns.add(typed("time_" + precision, timeType));
+            columns.add(typed("time_tz_" + precision, timeWithTimeZoneType));
+            columns.add(typed("timestamp_" + precision, timestampType));
+            columns.add(typed("timestamp_tz_" + precision, timestampWithTimeZoneType));
+            blocks.add(time.build(), timeWithTimeZone.build(), timestamp.build(), timestampWithTimeZone.build());
+        }
+        List<TypedColumn> typedColumns = columns.build();
+        Page page = new Page(blocks.build().toArray(new Block[0]));
+
+        List<List<Object>> result = roundTrip(typedColumns, page);
+        assertThat(result).isEqualTo(jsonRoundTrip(typedColumns, page));
+        assertThat(result.get(1)).containsExactly(
+                "01:02:03",
+                "01:02:03+00:00",
+                "1969-12-31 23:59:59",
+                "1969-12-31 23:59:59 UTC",
+                "01:02:03.400",
+                "01:02:03.400+00:00",
+                "1969-12-31 23:59:59.999",
+                "1969-12-31 23:59:59.999 UTC",
+                "01:02:03.400000",
+                "01:02:03.400000+00:00",
+                "1969-12-31 23:59:59.999999",
+                "1969-12-31 23:59:59.999999 UTC",
+                "01:02:03.400000000",
+                "01:02:03.400000000+00:00",
+                "1969-12-31 23:59:59.999999123",
+                "1969-12-31 23:59:59.999999123 UTC");
+    }
+
+    @Test
+    public void testDecimalTextMatchesJsonEncoding()
+            throws IOException
+    {
+        DecimalType shortDecimal = createDecimalType(10, 3);
+        BlockBuilder shortBlock = shortDecimal.createBlockBuilder(null, 6);
+        for (long unscaled : new long[] {123_456L, 1_000L, -5L, 0L, 9_999_999_999L}) {
+            shortDecimal.writeLong(shortBlock, unscaled);
+        }
+        shortBlock.appendNull();
+
+        DecimalType longDecimal = createDecimalType(38, 20);
+        BlockBuilder longBlock = longDecimal.createBlockBuilder(null, 6);
+        for (String unscaled : new String[] {"1", "-1", "100000000000000000000", "0", "99999999999999999999999999999999999999"}) {
+            longDecimal.writeObject(longBlock, Int128.valueOf(new BigInteger(unscaled)));
+        }
+        longBlock.appendNull();
+
+        DecimalType integralDecimal = createDecimalType(5, 0);
+        BlockBuilder integralBlock = integralDecimal.createBlockBuilder(null, 6);
+        for (long unscaled : new long[] {12_345L, -1L, 0L, 10L, 99_999L}) {
+            integralDecimal.writeLong(integralBlock, unscaled);
+        }
+        integralBlock.appendNull();
+
+        List<TypedColumn> columns = ImmutableList.of(typed("short", shortDecimal), typed("long", longDecimal), typed("integral", integralDecimal));
+        Page page = page(shortBlock.build(), longBlock.build(), integralBlock.build());
+
+        // Decimals keep the trailing zeros of their scale and never use an exponent
+        assertThat(roundTrip(columns, page))
+                .containsExactly(
+                        List.of("123.456", "0.00000000000000000001", "12345"),
+                        List.of("1.000", "-0.00000000000000000001", "-1"),
+                        List.of("-0.005", "1.00000000000000000000", "0"),
+                        List.of("0.000", "0.00000000000000000000", "10"),
+                        List.of("9999999.999", "999999999999999999.99999999999999999999", "99999"),
+                        Arrays.asList(null, null, null))
                 .isEqualTo(jsonRoundTrip(columns, page));
     }
 
