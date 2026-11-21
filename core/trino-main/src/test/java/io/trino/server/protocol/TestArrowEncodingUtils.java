@@ -1253,6 +1253,47 @@ public class TestArrowEncodingUtils
     }
 
     @Test
+    public void testMapWithStructuralKeys()
+            throws IOException
+    {
+        // Arrow requires the map key field to be non-nullable, including for array and row keys
+        ArrayType arrayKey = new ArrayType(BIGINT);
+        RowType rowKey = RowType.rowType(RowType.field("id", BIGINT), RowType.field("name", VARCHAR));
+        MapType arrayKeyMap = new MapType(arrayKey, VARCHAR, new TypeOperators());
+        MapType rowKeyMap = new MapType(rowKey, BIGINT, new TypeOperators());
+
+        MapBlockBuilder arrayKeyMaps = arrayKeyMap.createBlockBuilder(null, 2);
+        arrayKeyMaps.buildEntry((keyBuilder, valueBuilder) -> {
+            ((ArrayBlockBuilder) keyBuilder).buildEntry(elements -> {
+                BIGINT.writeLong(elements, 1L);
+                BIGINT.writeLong(elements, 2L);
+            });
+            VARCHAR.writeSlice(valueBuilder, utf8Slice("a"));
+            ((ArrayBlockBuilder) keyBuilder).buildEntry(_ -> {});
+            valueBuilder.appendNull();
+        });
+        arrayKeyMaps.appendNull();
+
+        MapBlockBuilder rowKeyMaps = rowKeyMap.createBlockBuilder(null, 2);
+        rowKeyMaps.buildEntry((keyBuilder, valueBuilder) -> {
+            ((RowBlockBuilder) keyBuilder).buildEntry(fields -> {
+                BIGINT.writeLong(fields.get(0), 1L);
+                VARCHAR.writeSlice(fields.get(1), utf8Slice("one"));
+            });
+            BIGINT.writeLong(valueBuilder, 10L);
+        });
+        rowKeyMaps.buildEntry((_, _) -> {});
+
+        Map<Object, Object> arrayKeyValues = new HashMap<>();
+        arrayKeyValues.put(List.of(1L, 2L), "a");
+        arrayKeyValues.put(List.of(), null);
+        List<TypedColumn> columns = ImmutableList.of(typed("array_key", arrayKeyMap), typed("row_key", rowKeyMap));
+        assertThat(roundTrip(columns, page(arrayKeyMaps.build(), rowKeyMaps.build()))).containsExactly(
+                Arrays.asList(arrayKeyValues, Map.of(Row.builder().addField("id", 1L).addField("name", "one").build(), 10L)),
+                Arrays.asList(null, Map.of()));
+    }
+
+    @Test
     public void testRowSerialization()
             throws IOException
     {
