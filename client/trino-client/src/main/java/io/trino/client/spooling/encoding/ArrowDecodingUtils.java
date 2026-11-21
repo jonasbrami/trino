@@ -563,9 +563,7 @@ public class ArrowDecodingUtils
                 return OptionalInt.empty();
             }
             // Parametric interval: start field, end field, leading precision and fractional-seconds precision
-            if (arguments.size() < 4) {
-                return OptionalInt.of(0);
-            }
+            checkArgument(arguments.size() == 4, "Expected start field, end field, leading precision and fractional seconds precision in interval type signature: %s", signature);
             return OptionalInt.of(arguments.get(3).getLongLiteral().intValue());
         }
     }

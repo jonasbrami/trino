@@ -15,6 +15,9 @@ package io.trino.server.protocol;
 
 import com.google.common.collect.ImmutableList;
 import io.airlift.slice.Slices;
+import io.trino.client.ClientStandardTypes;
+import io.trino.client.ClientTypeSignature;
+import io.trino.client.ClientTypeSignatureParameter;
 import io.trino.client.CloseableIterator;
 import io.trino.client.Column;
 import io.trino.client.QueryDataDecoder;
@@ -1639,6 +1642,31 @@ public class TestArrowEncodingUtils
             case ArrayBlockBuilder array -> array.buildEntry(elements -> INTERVAL_DAY_TIME.writeLong(elements, micros));
             case RowBlockBuilder row -> row.buildEntry(fields -> INTERVAL_DAY_TIME.writeLong(fields.getFirst(), micros));
             default -> INTERVAL_DAY_TIME.writeLong(builder, micros);
+        }
+    }
+
+    @Test
+    public void testIncompleteIntervalTypeSignature()
+            throws IOException
+    {
+        QueryDataEncoder encoder = createEncoder(ImmutableList.of(new OutputColumn(0, "col0", INTERVAL_DAY_TIME)));
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            encoder.encodeTo(output, ImmutableList.of(page(intervalDayTimeBlock(INTERVAL_DAY_TIME))));
+
+            // Without the fractional seconds precision, values cannot be rendered with the right number of digits
+            ClientTypeSignature signature = new ClientTypeSignature(
+                    ClientStandardTypes.INTERVAL_DAY_TO_SECOND,
+                    ImmutableList.of(ClientTypeSignatureParameter.ofLong(3), ClientTypeSignatureParameter.ofLong(6)));
+            QueryDataDecoder decoder = createDecoder(ImmutableList.of(new Column("col0", "interval day to second", signature)));
+            try (CloseableIterator<List<Object>> iterator = decoder.decode(new ByteArrayInputStream(output.toByteArray()), null)) {
+                assertThatThrownBy(iterator::hasNext)
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageStartingWith("Expected start field, end field, leading precision and fractional seconds precision in interval type signature");
+            }
+        }
+        finally {
+            encoder.close();
         }
     }
 
