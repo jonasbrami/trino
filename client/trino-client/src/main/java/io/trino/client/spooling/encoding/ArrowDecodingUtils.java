@@ -49,7 +49,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -102,6 +101,10 @@ import static org.apache.arrow.vector.types.TimeUnit.MICROSECOND;
 
 public class ArrowDecodingUtils
 {
+    private static final long MICROSECONDS_PER_SECOND = 1_000_000;
+    private static final long NANOSECONDS_PER_MICROSECOND = 1_000;
+    private static final long NANOSECONDS_PER_SECOND = 1_000_000_000;
+
     private ArrowDecodingUtils() {}
 
     public static VectorTypeDecoder[] createVectorTypeDecoders(List<Column> columns, BufferAllocator allocator, List<FieldVector> vectors)
@@ -402,14 +405,12 @@ public class ArrowDecodingUtils
             }
             else if (vector instanceof TimeStampMicroVector) {
                 long micros = ((TimeStampMicroVector) vector).get(position);
-                Instant instant = Instant.EPOCH.plus(Duration.ofNanos(micros * 1_000));
-                dateTime = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+                dateTime = LocalDateTime.ofInstant(ofEpochMicros(micros), ZoneOffset.UTC);
                 precision = 6;
             }
             else if (vector instanceof TimeStampNanoVector) {
                 long nanos = ((TimeStampNanoVector) vector).get(position);
-                Instant instant = Instant.EPOCH.plus(Duration.ofNanos(nanos));
-                dateTime = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+                dateTime = LocalDateTime.ofInstant(ofEpochNanos(nanos), ZoneOffset.UTC);
                 precision = 9;
             }
             else {
@@ -707,14 +708,12 @@ public class ArrowDecodingUtils
             }
             else if (vector instanceof TimeStampMicroTZVector) {
                 long micros = ((TimeStampMicroTZVector) vector).get(position);
-                Instant instant = Instant.EPOCH.plus(Duration.ofNanos(micros * 1_000));
-                zonedDateTime = ZonedDateTime.ofInstant(instant, ZoneOffset.UTC);
+                zonedDateTime = ZonedDateTime.ofInstant(ofEpochMicros(micros), ZoneOffset.UTC);
                 precision = 6;
             }
             else if (vector instanceof TimeStampNanoTZVector) {
                 long nanos = ((TimeStampNanoTZVector) vector).get(position);
-                Instant instant = Instant.EPOCH.plus(Duration.ofNanos(nanos));
-                zonedDateTime = ZonedDateTime.ofInstant(instant, ZoneOffset.UTC);
+                zonedDateTime = ZonedDateTime.ofInstant(ofEpochNanos(nanos), ZoneOffset.UTC);
                 precision = 9;
             }
             else {
@@ -815,6 +814,16 @@ public class ArrowDecodingUtils
         {
             vector.close();
         }
+    }
+
+    private static Instant ofEpochMicros(long epochMicros)
+    {
+        return Instant.ofEpochSecond(floorDiv(epochMicros, MICROSECONDS_PER_SECOND), floorMod(epochMicros, MICROSECONDS_PER_SECOND) * NANOSECONDS_PER_MICROSECOND);
+    }
+
+    private static Instant ofEpochNanos(long epochNanos)
+    {
+        return Instant.ofEpochSecond(floorDiv(epochNanos, NANOSECONDS_PER_SECOND), floorMod(epochNanos, NANOSECONDS_PER_SECOND));
     }
 
     public interface VectorTypeDecoder
